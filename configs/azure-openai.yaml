@@ -1,0 +1,6 @@
+model: azure/mneno-bench
+provider: azure
+temperature: 0.0
+max_tokens: 512
+extra:
+  api_version_env: AZURE_API_VERSION
