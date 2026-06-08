@@ -26,6 +26,11 @@ results/mneno/exports/*.json
 results/mneno/traces/*.json
 results/baselines/*.json
 results/reports/*.md
+results/locomo/*.json
+results/locomo/*.md
+results/locomo/raw/
+results/locomo/traces/
+results/locomo/judge/
 vendor/wheels/*.whl
 mneno-*.whl
 data/locomo/*
@@ -35,7 +40,15 @@ data/beam/*
 !results/mneno/.gitkeep
 !results/baselines/.gitkeep
 !results/reports/.gitkeep
+!results/locomo/.gitkeep
 !vendor/wheels/.gitkeep
 !data/locomo/.gitkeep
+!data/locomo/README.md
+!data/locomo/raw/
+data/locomo/raw/*
+!data/locomo/raw/.gitkeep
+!data/locomo/processed/
+data/locomo/processed/*
+!data/locomo/processed/.gitkeep
 !data/longmemeval/.gitkeep
 !data/beam/.gitkeep

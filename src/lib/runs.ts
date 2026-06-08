@@ -5,6 +5,8 @@ import type {
   ContextRotCategorySummary,
   ContextRotSummary,
   ContextRotSystemSummary,
+  LocomoSummary,
+  LocomoSystemSummary,
   MnenoCaseDecisionSummary,
   MnenoExecutionSummary,
   MetricResult,
@@ -70,16 +72,33 @@ export const sampleRun: BenchmarkRun = {
 
 type JsonObject = Record<string, unknown>;
 
-const resultModules = import.meta.glob("../../results/mneno/*.json", {
+const mnenoResultModules = import.meta.glob("../../results/mneno/*.json", {
   eager: true,
   import: "default",
 }) as Record<string, unknown>;
 
-const reportModules = import.meta.glob("../../results/reports/*.md", {
+const locomoResultModules = import.meta.glob("../../results/locomo/*.json", {
   eager: true,
-  query: "?raw",
   import: "default",
-}) as Record<string, string>;
+}) as Record<string, unknown>;
+
+const reportModules = {
+  ...(import.meta.glob("../../results/reports/*.md", {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  }) as Record<string, string>),
+  ...(import.meta.glob("../../results/locomo/*.md", {
+    eager: true,
+    query: "?raw",
+    import: "default",
+  }) as Record<string, string>),
+};
+
+const resultModules = {
+  ...mnenoResultModules,
+  ...locomoResultModules,
+};
 
 export function isTraceExport(value: unknown): value is MnenoTraceExport {
   const object = asObject(value);
@@ -128,6 +147,7 @@ export function parseBenchmarkRun(value: unknown): BenchmarkRun {
   const contextRot = parseContextRotSummary(
     asObject(metadata?.context_rot_suite),
   );
+  const locomo = parseLocomoSummary(asObject(metadata?.locomo));
   const mnenoExecution = parseMnenoExecution(
     asObject(metadata?.mneno_execution),
     results,
@@ -140,7 +160,7 @@ export function parseBenchmarkRun(value: unknown): BenchmarkRun {
     status: parseStatus(raw.status),
     systems: asArray(raw.systems).map(String),
     cases: results.length,
-    source: "synthetic",
+    source: raw.suite === "locomo" ? "external" : "synthetic",
     mnenoStatus: parseStatus(mnenoStatus),
     metrics,
     trace,
@@ -153,6 +173,7 @@ export function parseBenchmarkRun(value: unknown): BenchmarkRun {
           ? metadata.mneno_version
           : null,
     contextRot,
+    locomo,
     mnenoExecution,
     rawExport: value,
   };
@@ -194,7 +215,7 @@ export const suites: BenchmarkSuite[] = [
     id: "locomo",
     name: "LOCOMO",
     role: "External validation layer",
-    status: "planned",
+    status: "available",
     difficulty: "easy",
   },
   {
@@ -256,6 +277,97 @@ function parseContextRotSummary(value: JsonObject | null): ContextRotSummary | u
     exportDirectory:
       typeof value.export_directory === "string" ? value.export_directory : "",
     failureCount: asArray(value.failure_cases).length,
+  };
+}
+
+function parseLocomoSummary(value: JsonObject | null): LocomoSummary | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const dataset = asObject(value.dataset) ?? {};
+  const scoring = asObject(value.official_scoring) ?? {};
+  const validation = asObject(value.dataset_validation) ?? {};
+  const rawSystems = asObject(value.systems) ?? {};
+  const reportPath = typeof value.report_path === "string" ? value.report_path : "";
+  const reportSource = Object.entries(reportModules).find(([path]) =>
+    path.endsWith("/locomo_latest.md"),
+  )?.[1];
+  return {
+    datasetStatus:
+      typeof value.dataset_status === "string" ? value.dataset_status : "unknown",
+    executionStatus: parseStatus(value.execution_status),
+    evaluationMode:
+      typeof value.evaluation_mode === "string" ? value.evaluation_mode : "retrieval_only",
+    conversationCount: numberValue(dataset.conversation_count),
+    messageCount: numberValue(dataset.message_count),
+    questionCount: numberValue(dataset.question_count),
+    categories: numberRecord(dataset.categories),
+    systems: Object.entries(rawSystems)
+      .map(([name, system]) => parseLocomoSystem(name, asObject(system)))
+      .filter((system): system is LocomoSystemSummary => system !== null),
+    malformedEvidenceWarningCount: numberValue(
+      validation.malformed_evidence_warning_count,
+    ),
+    reportPath,
+    reportUrl: reportSource
+      ? `data:text/markdown;charset=utf-8,${encodeURIComponent(reportSource)}`
+      : undefined,
+    traceDirectory:
+      typeof value.trace_directory === "string" ? value.trace_directory : "",
+    rawOutputDirectory:
+      typeof value.raw_output_directory === "string" ? value.raw_output_directory : "",
+    judgePromptDirectory:
+      typeof value.judge_prompt_directory === "string" ? value.judge_prompt_directory : "",
+    judgeResponseDirectory:
+      typeof value.judge_response_directory === "string" ? value.judge_response_directory : "",
+    judgeModel: typeof value.judge_model === "string" ? value.judge_model : null,
+    judgeProvider: typeof value.judge_provider === "string" ? value.judge_provider : null,
+    promptVersion:
+      typeof value.prompt_version === "string" ? value.prompt_version : null,
+    officialScoringStatus:
+      typeof scoring.status === "string" ? scoring.status : "not_implemented",
+    officialScoringReason:
+      typeof scoring.reason === "string"
+        ? scoring.reason
+        : "Official LOCOMO scoring is unavailable.",
+  };
+}
+
+function parseLocomoSystem(
+  name: string,
+  value: JsonObject | null,
+): LocomoSystemSummary | null {
+  if (!value) {
+    return null;
+  }
+  return {
+    name,
+    status: parseStatus(value.status),
+    metrics: nullableNumberRecord(value.metrics),
+    scoreLabels: parseScoreLabels(asObject(value.score_labels)),
+    traceIds: asArray(value.trace_ids).map(String),
+    judge: parseLocomoJudge(asObject(value.judge)),
+    skipReason: typeof value.skip_reason === "string" ? value.skip_reason : null,
+    errors: asArray(value.errors).map(String),
+  };
+}
+
+function parseScoreLabels(value: JsonObject | null): LocomoSystemSummary["scoreLabels"] {
+  return {
+    officialScore: nullableNumber(value?.official_score),
+    diagnosticScore: nullableNumber(value?.diagnostic_score),
+    retrievalDiagnostic: nullableNumber(value?.retrieval_diagnostic),
+    judgeScore: nullableNumber(value?.judge_score),
+  };
+}
+
+function parseLocomoJudge(value: JsonObject | null): LocomoSystemSummary["judge"] {
+  return {
+    status: typeof value?.status === "string" ? value.status : "not_requested",
+    model: typeof value?.model === "string" ? value.model : null,
+    provider: typeof value?.provider === "string" ? value.provider : null,
+    promptVersion:
+      typeof value?.prompt_version === "string" ? value.prompt_version : null,
   };
 }
 
@@ -422,9 +534,14 @@ function count(explicit: unknown, collection: unknown): number {
 }
 
 function parseStatus(value: unknown): RunStatus {
-  return ["pending", "running", "completed", "failed", "skipped"].includes(
-    String(value),
-  )
+  return [
+    "pending",
+    "running",
+    "completed",
+    "failed",
+    "skipped",
+    "dataset_missing",
+  ].includes(String(value))
     ? (value as RunStatus)
     : "failed";
 }
@@ -441,6 +558,10 @@ function asArray(value: unknown): unknown[] {
 
 function numberValue(value: unknown): number {
   return typeof value === "number" ? value : 0;
+}
+
+function nullableNumber(value: unknown): number | null {
+  return typeof value === "number" ? value : null;
 }
 
 function numberRecord(value: unknown): Record<string, number> {

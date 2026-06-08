@@ -1,4 +1,10 @@
-export type RunStatus = "pending" | "running" | "completed" | "failed" | "skipped";
+export type RunStatus =
+  | "pending"
+  | "running"
+  | "completed"
+  | "failed"
+  | "skipped"
+  | "dataset_missing";
 
 export interface MetricResult {
   name: string;
@@ -35,6 +41,7 @@ export interface BenchmarkRun {
   benchmarkVersion: string;
   mnenoVersion: string | null;
   contextRot?: ContextRotSummary;
+  locomo?: LocomoSummary;
   mnenoExecution?: MnenoExecutionSummary;
   rawExport?: unknown;
 }
@@ -94,6 +101,50 @@ export interface ContextRotSummary {
   traceDirectory: string;
   exportDirectory: string;
   failureCount: number;
+}
+
+export interface LocomoSystemSummary {
+  name: string;
+  status: RunStatus;
+  metrics: Record<string, number | null>;
+  scoreLabels: {
+    officialScore: number | null;
+    diagnosticScore: number | null;
+    retrievalDiagnostic: number | null;
+    judgeScore: number | null;
+  };
+  traceIds: string[];
+  judge: {
+    status: string;
+    model: string | null;
+    provider: string | null;
+    promptVersion: string | null;
+  };
+  skipReason: string | null;
+  errors: string[];
+}
+
+export interface LocomoSummary {
+  datasetStatus: string;
+  executionStatus: RunStatus;
+  evaluationMode: string;
+  conversationCount: number;
+  messageCount: number;
+  questionCount: number;
+  categories: Record<string, number>;
+  systems: LocomoSystemSummary[];
+  malformedEvidenceWarningCount: number;
+  reportPath: string;
+  reportUrl?: string;
+  traceDirectory: string;
+  rawOutputDirectory: string;
+  judgePromptDirectory: string;
+  judgeResponseDirectory: string;
+  judgeModel: string | null;
+  judgeProvider: string | null;
+  promptVersion: string | null;
+  officialScoringStatus: string;
+  officialScoringReason: string;
 }
 
 export interface MnenoTraceExport {

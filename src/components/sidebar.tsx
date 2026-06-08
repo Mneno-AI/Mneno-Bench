@@ -3,10 +3,11 @@ import {
   FlaskConical,
   GitCompareArrows,
   History,
+  Landmark,
   MemoryStick,
 } from "lucide-react";
 
-export type PageKey = "dashboard" | "runs" | "compare" | "mneno-suite";
+export type PageKey = "dashboard" | "runs" | "compare" | "mneno-suite" | "locomo";
 
 interface SidebarProps {
   activePage: PageKey;
@@ -18,6 +19,7 @@ const navigation = [
   { id: "runs" as const, label: "Runs", icon: History },
   { id: "compare" as const, label: "Compare", icon: GitCompareArrows },
   { id: "mneno-suite" as const, label: "Mneno Suite", icon: FlaskConical },
+  { id: "locomo" as const, label: "LOCOMO", icon: Landmark },
 ];
 
 export function Sidebar({ activePage, onNavigate }: SidebarProps) {
@@ -74,9 +76,9 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
           })}
         </nav>
         <div className="absolute bottom-6 left-4 right-4 border-t border-ink-950/10 pt-4">
-          <p className="font-mono text-xs text-ink-600">STEP 4 / CORE-AWARE</p>
+          <p className="font-mono text-xs text-ink-600">STEP 5 / LOCOMO</p>
           <p className="mt-1 text-xs leading-5 text-ink-600">
-            Deterministic local runs. Mneno remains optional.
+            External dataset optional. Mneno remains optional.
           </p>
         </div>
       </aside>
@@ -92,7 +94,7 @@ function Brand() {
       </span>
       <div>
         <p className="text-sm font-semibold leading-4">Mneno Bench</p>
-        <p className="font-mono text-[11px] leading-4 text-ink-600">v0.4 context rot</p>
+        <p className="font-mono text-[11px] leading-4 text-ink-600">v0.5 locomo</p>
       </div>
     </div>
   );

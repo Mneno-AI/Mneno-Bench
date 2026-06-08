@@ -3,10 +3,17 @@ import { useEffect, useState } from "react";
 import { Sidebar, type PageKey } from "./components/sidebar";
 import { ComparePage } from "./pages/compare";
 import { DashboardPage } from "./pages/dashboard";
+import { LocomoPage } from "./pages/locomo";
 import { MnenoSuitePage } from "./pages/mneno-suite";
 import { RunsPage } from "./pages/runs";
 
-const validPages: PageKey[] = ["dashboard", "runs", "compare", "mneno-suite"];
+const validPages: PageKey[] = [
+  "dashboard",
+  "runs",
+  "compare",
+  "mneno-suite",
+  "locomo",
+];
 
 function pageFromHash(): PageKey {
   const candidate = window.location.hash.replace("#/", "") as PageKey;
@@ -42,6 +49,7 @@ export default function App() {
           {page === "runs" && <RunsPage />}
           {page === "compare" && <ComparePage />}
           {page === "mneno-suite" && <MnenoSuitePage />}
+          {page === "locomo" && <LocomoPage />}
         </div>
       </main>
     </div>

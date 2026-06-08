@@ -302,3 +302,75 @@ def test_full_mneno_execution_uses_runtime_capabilities(tmp_path: Path) -> None:
     assert first.excluded_memory_ids == ["sp-python-old"]
     assert first.decision_summary is not None
     assert first.decision_summary.inclusion_reasons
+
+
+class SmallBudgetContextAdapter(FullMnenoAdapter):
+    def __init__(self) -> None:
+        super().__init__()
+        self.context_budgets: list[int] = []
+        self.operational_prefixes: list[list[str]] = []
+
+    def evaluate_context(self, **kwargs: Any) -> NormalizedContextResult:
+        self._called("evaluate_context")
+        budget = kwargs["budget"]
+        client = kwargs["client"]
+        expected = kwargs["expected_memory_ids"]
+        if expected and all(str(memory_id).startswith("internal-cb-") for memory_id in expected):
+            self.context_budgets.append(budget)
+            session_memories = [
+                memory
+                for memory in client["memories"]
+                if memory.get("session_id") == kwargs["current_session_id"]
+            ]
+            self.operational_prefixes.append(
+                [memory["id"] for memory in session_memories[:2]]
+            )
+            if budget in {2, 3}:
+                return NormalizedContextResult(
+                    provider="mneno",
+                    query=kwargs["query"],
+                    metrics={"context_relevance": 0.0},
+                    raw_result={
+                        "included_memory_ids": [],
+                        "reason": "no memory fits positive small budget",
+                    },
+                )
+        return NormalizedContextResult(provider="mneno", query=kwargs["query"])
+
+
+def test_context_budget_regression_accepts_empty_small_budget_evaluations(
+    tmp_path: Path,
+) -> None:
+    adapter = SmallBudgetContextAdapter()
+    run = run_demo(
+        PROJECT_ROOT / "data",
+        tmp_path,
+        adapter=adapter,  # type: ignore[arg-type]
+    )
+
+    execution = run.export_metadata["mneno_execution"]
+    assert "evaluate_context" not in execution["capability_errors"]
+    assert sorted(adapter.context_budgets) == [2, 2, 3]
+    assert adapter.operational_prefixes == [
+        ["cb-critical", "cb-deterministic"],
+        ["cb-critical", "cb-deterministic"],
+        ["cb-critical", "cb-deterministic"],
+    ]
+
+    budget_results = [
+        result
+        for result in run.results
+        if result.case.metadata.get("category") == "context_budget"
+    ]
+    assert len(budget_results) == 3
+    assert all(result.mneno_result is not None for result in budget_results)
+    context_evaluations = [
+        result.mneno_result.metadata["context_evaluation"]
+        for result in budget_results
+        if result.mneno_result is not None
+    ]
+    assert [item["metrics"]["context_relevance"] for item in context_evaluations] == [
+        0.0,
+        0.0,
+        0.0,
+    ]

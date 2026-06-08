@@ -178,4 +178,55 @@ describe("dashboard result parsing", () => {
       tracesExported: 24,
     });
   });
+
+  it("parses LOCOMO dataset and system status", () => {
+    const run = parseBenchmarkRun({
+      run_id: "locomo-1",
+      suite: "locomo",
+      status: "dataset_missing",
+      started_at: "2026-06-08T12:00:00Z",
+      systems: ["keyword_baseline", "mneno"],
+      results: [],
+      export_metadata: {
+        locomo: {
+          dataset_status: "dataset_missing",
+          execution_status: "skipped",
+          dataset: {
+            conversation_count: 0,
+            message_count: 0,
+            question_count: 0,
+            categories: {},
+          },
+          systems: {
+            mneno: {
+              status: "skipped",
+              metrics: {},
+              trace_ids: [],
+              skip_reason: "Dataset missing.",
+              errors: [],
+            },
+          },
+          official_scoring: {
+            status: "not_implemented",
+            reason: "Official scoring is pending.",
+          },
+          report_path: "results/locomo/locomo_latest.md",
+          trace_directory: "results/locomo/traces",
+          raw_output_directory: "results/locomo/raw",
+        },
+      },
+    });
+
+    expect(run.status).toBe("dataset_missing");
+    expect(run.source).toBe("external");
+    expect(run.locomo).toMatchObject({
+      datasetStatus: "dataset_missing",
+      executionStatus: "skipped",
+      questionCount: 0,
+    });
+    expect(run.locomo?.systems[0]).toMatchObject({
+      name: "mneno",
+      status: "skipped",
+    });
+  });
 });

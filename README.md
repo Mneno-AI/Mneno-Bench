@@ -112,6 +112,79 @@ alignment rewards active evidence and avoidance of inactive evidence.
 Explainability coverage requires trace events, decisions, or reasons; missing
 trace data is not converted into a successful score.
 
+**Mneno Context Rot Suite is a regression benchmark. LOCOMO is an external
+validation benchmark.**
+
+## LOCOMO Integration
+
+LOCOMO is the first external benchmark supported by Mneno Bench. It evaluates
+long-term conversational memory over independently authored multi-session
+conversations, complementing the Mneno-aligned Context Rot Suite without
+replacing it.
+
+Step 5 implements dataset loading and validation, keyword and full-context
+baselines, optional Mneno execution, normalized local results, trace
+preservation, Markdown reporting, and dashboard states. Step 6 adds retrieval,
+deterministic-answer, and optional LLM-judge evaluation while keeping official,
+diagnostic, retrieval, and judge scores explicitly separated.
+
+Obtain `data/locomo10.json` from the official Snap Research repository:
+
+https://github.com/snap-research/locomo
+
+Methodology reference: https://aclanthology.org/2024.acl-long.747/
+
+Place it at `data/locomo/raw/locomo10.json`, then run:
+
+```bash
+python -m benchmarks.locomo.run
+```
+
+### LOCOMO Evaluation Modes
+
+`retrieval_only` is the default. It is deterministic, requires no API key, and
+reports evidence retrieval and context-construction diagnostics only. Do not
+compare a `retrieval_only` score with the official LOCOMO leaderboard.
+
+```bash
+python -m benchmarks.locomo.run --mode retrieval_only
+```
+
+`deterministic_answer` creates a local extractive answer candidate and reports
+exact match, normalized exact match, token F1, answer containment, and the
+released LOCOMO category scorer applied to that candidate. These remain
+diagnostics: a compatible scorer does not make the deterministic answer
+generation path an official benchmark run, so `official_score` remains null.
+
+```bash
+python -m benchmarks.locomo.run --mode deterministic_answer
+```
+
+`llm_judge` optionally evaluates generated answers through the shared LiteLLM
+client. It requires an enabled model configuration, records model, provider,
+prompt version, raw responses, and optionally prompts, and skips cleanly when
+configuration or credentials are unavailable. The result is labeled
+`llm_judge_score`; it is not promoted to `official_score` unless the complete
+official methodology is implemented and validated.
+
+```bash
+python -m benchmarks.locomo.run --mode llm_judge \
+  --judge-config configs/local.example.yaml
+```
+
+The fixed outputs are:
+
+- `results/locomo/locomo_latest.json`
+- `results/locomo/locomo_latest.md`
+- `results/locomo/raw/` for preserved Mneno outputs
+- `results/locomo/traces/` for available Mneno traces
+- `results/locomo/judge/prompts/` for enabled judge prompt preservation
+- `results/locomo/judge/responses/` for raw judge responses
+
+The dataset is optional and ignored by Git. If absent, the command writes a
+`dataset_missing` result and skipped report instead of raising an exception.
+See `data/locomo/README.md` for accepted formats.
+
 ## Requirements
 
 - Python 3.11 or newer
@@ -269,14 +342,14 @@ must be enabled explicitly by a future benchmark runner.
 8. The dashboard parses capabilities, execution summaries, case decisions, and
    trace evidence from durable local runs.
 
-## Why Public Benchmarks Come Later
+## External Benchmark Sequence
 
-- **LOCOMO:** easy external validation after the first-party suite is credible.
+- **LOCOMO:** first external validation pipeline.
 - **LongMemEval:** medium validation for longer memory histories.
 - **BEAM:** harder stress testing after lifecycle and trace integration matures.
 
-Public benchmark dataset files are not bundled. Future integrations must
-respect upstream licenses and must never fabricate scores.
+Public benchmark dataset files are not bundled. Integrations must respect
+upstream licenses and must never fabricate scores.
 
 ## Roadmap
 
@@ -285,6 +358,8 @@ respect upstream licenses and must never fabricate scores.
 3. Richer lifecycle/session setup and trace-level decision explanations: complete
 4. Regression tracking across Mneno versions
 5. UI comparison and trace exploration
-6. LOCOMO
-7. LongMemEval
-8. BEAM
+6. LOCOMO execution pipeline: complete
+7. LOCOMO evaluation modes and official-compatible scoring: complete
+8. Failure analysis framework
+8. LongMemEval
+9. BEAM

@@ -6,6 +6,7 @@ const statusStyles: Record<RunStatus, string> = {
   completed: "bg-emerald-100 text-emerald-800",
   failed: "bg-red-100 text-red-800",
   skipped: "bg-amber-100 text-amber-900",
+  dataset_missing: "bg-amber-100 text-amber-900",
 };
 
 export function StatusBadge({ status }: { status: RunStatus }) {
@@ -13,7 +14,7 @@ export function StatusBadge({ status }: { status: RunStatus }) {
     <span
       className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold capitalize ${statusStyles[status]}`}
     >
-      {status}
+      {status.replace(/_/g, " ")}
     </span>
   );
 }

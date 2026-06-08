@@ -27,7 +27,7 @@ export function Dashboard({
             <p className="font-mono text-xs uppercase text-signal-700">
               Synthetic preview
             </p>
-            <h2 className="mt-1 text-xl font-semibold">Mneno-specific metrics</h2>
+              <h2 className="mt-1 text-xl font-semibold">Benchmark metrics</h2>
           </div>
           <button
             type="button"

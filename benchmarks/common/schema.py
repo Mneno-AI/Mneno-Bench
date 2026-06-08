@@ -16,6 +16,7 @@ class RunStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
+    DATASET_MISSING = "dataset_missing"
 
 
 class BenchmarkCase(BaseModel):

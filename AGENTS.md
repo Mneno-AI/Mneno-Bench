@@ -43,6 +43,20 @@ product contract.
 - Keep Mneno-specific metrics explainable through explicit numerators,
   denominators, lifecycle states, sessions, and trace evidence.
 
+## External Benchmark Philosophy
+
+- Never optimize implementation for benchmark scores.
+- Preserve benchmark neutrality.
+- Keep benchmark logic separated from Mneno-specific logic.
+- Do not alter benchmark datasets.
+- Prefer official evaluation methodologies.
+- Missing datasets must never crash the repository.
+- Never call diagnostic metrics official or fabricate official scores.
+- Keep retrieval diagnostics separate from answer-quality evaluation.
+- LLM judges must remain optional and use the shared LiteLLM abstraction.
+- Every judge output must identify its model, provider, and prompt version.
+- Missing judge credentials must skip judging rather than fail the benchmark.
+
 ## Development Setup
 
 Use Python 3.11+ and Node.js 22+.
