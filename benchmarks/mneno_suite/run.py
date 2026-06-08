@@ -17,6 +17,7 @@ from benchmarks.common.baselines import (
     keyword_baseline,
     random_baseline,
 )
+from benchmarks.common.capabilities import detect_mneno_capabilities
 from benchmarks.common.mneno_client import INSTALL_MESSAGE, MnenoAdapter
 from benchmarks.common.schema import (
     BaselineResult,
@@ -24,12 +25,12 @@ from benchmarks.common.schema import (
     BenchmarkResult,
     BenchmarkRun,
     MetricResult,
+    MnenoDecisionSummary,
     MnenoResult,
     NormalizedSearchResult,
     RunStatus,
     TraceSummary,
 )
-from benchmarks.common.traces import TraceLoader
 from benchmarks.common.utils import estimate_tokens, generate_run_id, now_iso, save_json
 from benchmarks.mneno_suite.dataset import (
     MnenoSuiteCase,
@@ -46,6 +47,11 @@ from benchmarks.mneno_suite.metrics import (
     session_continuity_score,
     stale_memory_suppression_rate,
 )
+from benchmarks.mneno_suite.execution import (
+    MnenoRuntime,
+    execute_mneno_case,
+    initialize_mneno_runtime,
+)
 from benchmarks.mneno_suite.scoring import (
     DEFAULT_CONTEXT_ROT_WEIGHTS,
     calculate_context_rot_score,
@@ -54,7 +60,7 @@ from benchmarks.mneno_suite.scoring import (
 app = typer.Typer(add_completion=False)
 console = Console()
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
-BENCHMARK_VERSION = "0.3.0"
+BENCHMARK_VERSION = "0.4.0"
 SUITE_NAME = "Mneno Context Rot Suite v1"
 SYSTEMS = ["keyword_baseline", "full_context_baseline", "random_baseline", "mneno"]
 
@@ -103,15 +109,28 @@ def run_mneno_context_rot_suite(
         },
     )
 
-    client: Any | None = None
+    runtime: MnenoRuntime | None = None
     if mneno_available:
-        client = sdk.create_client(trace_enabled=True)
-        for memory in memories:
-            sdk.add_memory(client, memory)
+        runtime = initialize_mneno_runtime(sdk, dataset, results_dir, run.run_id)
+        run.export_metadata["mneno_execution"] = runtime.summary.model_dump(mode="json")
+    else:
+        run.export_metadata["mneno_execution"] = {
+            "memories_loaded": 0,
+            "sessions_created": 0,
+            "conflicts_detected": 0,
+            "hierarchy_evaluated": False,
+            "hierarchy_transitions": {},
+            "compaction_previewed": False,
+            "compaction_stats": {},
+            "traces_exported": 0,
+            "memory_id_map": {},
+            "memory_loads": [],
+            "capability_errors": {},
+            "capability_report": detect_mneno_capabilities(sdk).model_dump(mode="json"),
+        }
 
-    case_metrics: dict[str, dict[str, dict[str, float]]] = defaultdict(dict)
+    case_metrics: dict[str, dict[str, dict[str, float | None]]] = defaultdict(dict)
     failure_cases: list[dict[str, Any]] = []
-    trace_loader = TraceLoader()
 
     for case in dataset.cases:
         limit = case.budget or k
@@ -156,18 +175,30 @@ def run_mneno_context_rot_suite(
             )
             metrics_by_system["mneno"] = []
         else:
-            mneno_result, mneno_values = _run_mneno_case(
-                sdk,
-                client,
+            assert runtime is not None
+            execution = execute_mneno_case(
+                runtime,
                 case,
-                memories,
-                memory_by_id,
                 results_dir,
                 run.run_id,
-                trace_loader,
-                limit,
+                max(k, limit),
             )
-            if mneno_values is not None:
+            mneno_result = execution.result
+            mneno_result.context_tokens = _context_tokens(
+                memories, execution.metric_ids
+            )
+            if mneno_result.status == RunStatus.COMPLETED:
+                mneno_values = _case_metric_values(
+                    case,
+                    execution.metric_ids,
+                    execution.compacted_ids,
+                    memory_by_id,
+                    mneno_result.trace_summary,
+                    decision_summary=mneno_result.decision_summary,
+                    hierarchy_available=execution.hierarchy_available,
+                    session_context_available=execution.session_context_available,
+                    explainability_available=execution.explainability_available,
+                )
                 case_metrics["mneno"][case.id] = mneno_values
                 metrics_by_system["mneno"] = _metric_results(mneno_values)
                 _record_failure(
@@ -178,8 +209,6 @@ def run_mneno_context_rot_suite(
                 )
             else:
                 metrics_by_system["mneno"] = []
-                if mneno_result.error:
-                    run.errors.append(f"{case.id}: {mneno_result.error}")
 
         run.results.append(
             BenchmarkResult(
@@ -202,16 +231,18 @@ def run_mneno_context_rot_suite(
                 )
             )
 
-    if mneno_available and client is not None:
+    if runtime is not None:
         try:
-            all_traces = sdk.export_all_traces(client=client)
+            all_traces = sdk.export_all_traces(client=runtime.client)
             all_traces_path = (
                 results_dir / "mneno" / "traces" / f"{run.run_id}-all.json"
             )
             save_json(all_traces_path, all_traces)
             run.export_metadata["all_traces"] = str(all_traces_path)
-        except Exception as exc:
-            run.errors.append(f"all trace export: {exc}")
+            runtime.summary.traces_exported += 1
+        except (AttributeError, RuntimeError):
+            pass
+        run.export_metadata["mneno_execution"] = runtime.summary.model_dump(mode="json")
 
     report_path = results_dir / "reports" / "context_rot_suite_latest.md"
     result_path = results_dir / "mneno" / "context_rot_suite_latest.json"
@@ -249,106 +280,17 @@ def run_demo(
     return run_mneno_context_rot_suite(data_dir, results_dir, k, adapter)
 
 
-def _run_mneno_case(
-    sdk: MnenoAdapter,
-    client: Any,
-    case: MnenoSuiteCase,
-    memories: list[dict[str, Any]],
-    memory_by_id: Mapping[str, Any],
-    results_dir: Path,
-    run_id: str,
-    trace_loader: TraceLoader,
-    limit: int,
-) -> tuple[MnenoResult, dict[str, float] | None]:
-    try:
-        common = {
-            "client": client,
-            "query": case.query,
-            "expected_memory_ids": case.expected_memory_ids,
-            "forbidden_memory_ids": case.forbidden_memory_ids,
-            "current_session_id": case.current_session_id,
-            "limit": limit,
-            "k": limit,
-        }
-        search = sdk.evaluate_search(**common)
-        context = None
-        if case.category in {"context_budget", "session_continuity", "explainability"}:
-            context = sdk.evaluate_context(**common)
-        compaction = None
-        if case.category == "compaction_retention":
-            compaction = sdk.evaluate_compaction(**common)
-
-        retrieved_ids = _retrieved_ids(search)
-        compacted_ids = (
-            _ids_from_raw(compaction.raw_result) if compaction else retrieved_ids
-        )
-        trace_id = search.trace_id
-        if context is not None:
-            trace_id = trace_id or context.trace_id
-        if compaction is not None:
-            trace_id = trace_id or compaction.trace_id
-
-        trace_summary = None
-        trace_path: Path | None = None
-        if trace_id:
-            trace_export = sdk.export_trace(trace_id=trace_id, client=client)
-            trace_path = results_dir / "mneno" / "traces" / f"{run_id}-{case.id}.json"
-            save_json(trace_path, trace_export)
-            if (
-                isinstance(trace_export, dict)
-                and trace_export.get("format") == "mneno.trace"
-            ):
-                trace_summary = trace_loader.load_trace_export(trace_export)
-                trace_summary.raw_trace_reference = str(trace_path)
-
-        benchmark_export = sdk.export_benchmark(
-            result=search.raw_result,
-            evaluation=search.raw_result,
-            client=client,
-        )
-        export_path = results_dir / "mneno" / "exports" / f"{run_id}-{case.id}.json"
-        save_json(export_path, benchmark_export)
-        values = _case_metric_values(
-            case,
-            retrieved_ids,
-            compacted_ids,
-            memory_by_id,
-            trace_summary,
-        )
-        return (
-            MnenoResult(
-                status=RunStatus.COMPLETED,
-                retrieved_memory_ids=retrieved_ids,
-                context_tokens=_context_tokens(memories, retrieved_ids),
-                latency_ms=float(search.metrics.get("latency_ms") or 0.0),
-                trace_summary=trace_summary,
-                metadata={
-                    "category": case.category,
-                    "benchmark_export": str(export_path),
-                    "trace_export": str(trace_path) if trace_path else None,
-                    "search_evaluation": search.model_dump(mode="json"),
-                    "context_evaluation": context.model_dump(mode="json")
-                    if context
-                    else None,
-                    "compaction_evaluation": (
-                        compaction.model_dump(mode="json") if compaction else None
-                    ),
-                    "compacted_memory_ids": compacted_ids,
-                },
-            ),
-            values,
-        )
-    except Exception as exc:
-        return MnenoResult(status=RunStatus.FAILED, error=str(exc)), None
-
-
 def _case_metric_values(
     case: MnenoSuiteCase,
     retrieved_ids: list[str],
-    compacted_ids: list[str],
+    compacted_ids: list[str] | None,
     memory_by_id: Mapping[str, Any],
     trace_summary: TraceSummary | None,
-) -> dict[str, float]:
+    decision_summary: MnenoDecisionSummary | None = None,
+    hierarchy_available: bool = True,
+    session_context_available: bool = True,
+    explainability_available: bool = True,
+) -> dict[str, float | None]:
     return {
         "expected_memory_recall": expected_memory_recall(
             retrieved_ids, case.expected_memory_ids
@@ -362,31 +304,47 @@ def _case_metric_values(
         "context_efficiency_score": context_efficiency_score(
             retrieved_ids, case.expected_memory_ids, memory_by_id
         ),
-        "lifecycle_alignment_score": lifecycle_alignment_score(
-            retrieved_ids,
-            case.expected_memory_ids,
-            case.forbidden_memory_ids,
-            memory_by_id,
+        "lifecycle_alignment_score": (
+            lifecycle_alignment_score(
+                retrieved_ids,
+                case.expected_memory_ids,
+                case.forbidden_memory_ids,
+                memory_by_id,
+            )
+            if hierarchy_available
+            else None
         ),
-        "session_continuity_score": session_continuity_score(
-            retrieved_ids,
-            case.expected_memory_ids,
-            case.forbidden_memory_ids,
-            memory_by_id,
-            case.current_session_id,
+        "session_continuity_score": (
+            session_continuity_score(
+                retrieved_ids,
+                case.expected_memory_ids,
+                case.forbidden_memory_ids,
+                memory_by_id,
+                case.current_session_id,
+            )
+            if session_context_available
+            else None
         ),
-        "compaction_retention_score": compaction_retention_score(
-            compacted_ids, case.expected_memory_ids, memory_by_id
+        "compaction_retention_score": (
+            compaction_retention_score(
+                compacted_ids, case.expected_memory_ids, memory_by_id
+            )
+            if compacted_ids is not None
+            else None
         ),
-        "explainability_coverage_score": explainability_coverage_score(
-            retrieved_ids, trace_summary
+        "explainability_coverage_score": (
+            explainability_coverage_score(
+                retrieved_ids, trace_summary, decision_summary
+            )
+            if explainability_available
+            else None
         ),
     }
 
 
 def _build_suite_summary(
     dataset: MnenoSuiteDataset,
-    case_metrics: Mapping[str, Mapping[str, Mapping[str, float]]],
+    case_metrics: Mapping[str, Mapping[str, Mapping[str, float | None]]],
     mneno_available: bool,
 ) -> dict[str, Any]:
     systems: dict[str, Any] = {}
@@ -434,23 +392,33 @@ def _build_suite_summary(
     }
 
 
-def _average_metric_maps(values: Any) -> dict[str, float]:
+def _average_metric_maps(values: Any) -> dict[str, float | None]:
     rows = list(values)
     if not rows:
         return {}
     names = sorted({name for row in rows for name in row})
-    return {
-        name: round(sum(row.get(name, 0.0) for row in rows) / len(rows), 6)
-        for name in names
-    }
+    averaged: dict[str, float | None] = {}
+    for name in names:
+        available = [row.get(name) for row in rows if row.get(name) is not None]
+        averaged[name] = (
+            round(sum(float(value) for value in available) / len(available), 6)
+            if available
+            else None
+        )
+    return averaged
 
 
-def _metric_results(values: Mapping[str, float]) -> list[MetricResult]:
+def _metric_results(values: Mapping[str, float | None]) -> list[MetricResult]:
     return [
         MetricResult(
             name=name,
             value=value,
             description=METRIC_DESCRIPTIONS.get(name, ""),
+            unavailable_reason=(
+                "Required Mneno capability or trace evidence was unavailable."
+                if value is None
+                else None
+            ),
         )
         for name, value in sorted(values.items())
     ]
@@ -523,7 +491,7 @@ def _write_report(run: BenchmarkRun, path: Path) -> None:
     lines.append("| --- | " + " | ".join("---:" for _ in completed) + " |")
     for category in suite["dataset"]["categories"]:
         values = [
-            f"{systems[name]['categories'][category]['context_rot_score']:.4f}"
+            _format_score(systems[name]["categories"][category]["context_rot_score"])
             for name in completed
         ]
         lines.append(f"| {category} | " + " | ".join(values) + " |")
@@ -533,7 +501,51 @@ def _write_report(run: BenchmarkRun, path: Path) -> None:
     lines.append("| --- | --- | ---: |")
     for name in completed:
         for metric, value in systems[name]["metrics"].items():
-            lines.append(f"| {name} | {metric} | {value:.4f} |")
+            lines.append(f"| {name} | {metric} | {_format_score(value)} |")
+
+    execution = run.export_metadata.get("mneno_execution", {})
+    capability_report = execution.get("capability_report", {})
+    capabilities = capability_report.get("capabilities", {})
+    lines.extend(
+        [
+            "",
+            "## Mneno Core Execution",
+            "",
+            f"- Installed: **{'yes' if capability_report.get('available') else 'no'}**",
+            f"- Partial capability support: **{'yes' if capability_report.get('partial') else 'no'}**",
+            f"- Memories loaded: **{execution.get('memories_loaded', 0)}**",
+            f"- Sessions created: **{execution.get('sessions_created', 0)}**",
+            f"- Conflicts detected: **{execution.get('conflicts_detected', 0)}**",
+            f"- Hierarchy evaluated: **{'yes' if execution.get('hierarchy_evaluated') else 'no'}**",
+            f"- Compaction previewed: **{'yes' if execution.get('compaction_previewed') else 'no'}**",
+            f"- Traces exported: **{execution.get('traces_exported', 0)}**",
+            "",
+            "### Capabilities",
+            "",
+            "| Capability | Supported |",
+            "| --- | --- |",
+        ]
+    )
+    for capability, supported in sorted(capabilities.items()):
+        lines.append(f"| {capability} | {'yes' if supported else 'no'} |")
+    missing = capability_report.get("missing", [])
+    if missing:
+        lines.extend(["", f"Missing capabilities: `{', '.join(missing)}`"])
+    capability_errors = execution.get("capability_errors", {})
+    if capability_errors:
+        lines.extend(["", "### Capability Errors", ""])
+        for capability, error in sorted(capability_errors.items()):
+            lines.append(f"- `{capability}`: {error}")
+    transitions = execution.get("hierarchy_transitions", {})
+    if transitions:
+        lines.extend(["", "Hierarchy transitions:"])
+        for name, count in sorted(transitions.items()):
+            lines.append(f"- {name}: **{count}**")
+    compaction_stats = execution.get("compaction_stats", {})
+    if compaction_stats:
+        lines.extend(["", "Compaction preview stats:"])
+        for name, count in sorted(compaction_stats.items()):
+            lines.append(f"- {name}: **{count}**")
 
     lines.extend(["", "## Export Locations", ""])
     lines.append(f"- Result: `{suite['result_path']}`")
@@ -566,6 +578,10 @@ def _write_report(run: BenchmarkRun, path: Path) -> None:
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("\n".join(lines), encoding="utf-8")
+
+
+def _format_score(value: Any) -> str:
+    return "unavailable" if value is None else f"{float(value):.4f}"
 
 
 def _retrieved_ids(result: NormalizedSearchResult) -> list[str]:

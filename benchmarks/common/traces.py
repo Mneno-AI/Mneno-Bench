@@ -50,6 +50,10 @@ class TraceLoader:
         operations = _items(trace, "operations")
         events = _items(trace, "events")
         decisions = _items(trace, "decisions")
+        if not operations and trace.get("operation") is not None:
+            operations = [trace["operation"]]
+        if not decisions:
+            decisions = [event for event in events if _is_decision_event(event)]
         trace_id = trace.get("id") or trace.get("trace_id")
         return TraceSummary(
             trace_id=str(trace_id) if trace_id is not None else None,
@@ -73,6 +77,16 @@ class TraceLoader:
 def _items(trace: dict[str, Any], key: str) -> list[Any]:
     value = trace.get(key, [])
     return value if isinstance(value, list) else []
+
+
+def _is_decision_event(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    event_type = str(value.get("event_type", "")).lower()
+    return any(
+        term in event_type
+        for term in ("decision", "included", "excluded", "selected", "suppressed")
+    )
 
 
 def _string_list(trace: dict[str, Any], key: str) -> list[str]:

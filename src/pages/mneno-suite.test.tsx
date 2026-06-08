@@ -62,6 +62,34 @@ const run: BenchmarkRun = {
       },
     ],
   },
+  mnenoExecution: {
+    memoriesLoaded: 48,
+    sessionsCreated: 12,
+    conflictsDetected: 2,
+    hierarchyEvaluated: true,
+    hierarchyTransitions: { promoted: 1 },
+    compactionPreviewed: true,
+    compactionStats: { kept: 46 },
+    tracesExported: 24,
+    capabilityErrors: {},
+    capabilityReport: {
+      available: true,
+      version: "0.4.0",
+      capabilities: { build_context: true, preview_compaction: true },
+      missing: [],
+      partial: false,
+    },
+    decisions: [
+      {
+        caseId: "case-ct-port",
+        category: "contradiction",
+        includedIds: ["ct-port-a"],
+        excludedIds: ["ct-port-b"],
+        traceIds: ["trace-1"],
+        reasonCount: 2,
+      },
+    ],
+  },
 };
 
 describe("Mneno Suite page", () => {
@@ -74,5 +102,10 @@ describe("Mneno Suite page", () => {
     expect(html).toContain("Mneno");
     expect(html).toContain("skipped");
     expect(html).toContain("24 cases");
+    expect(html).toContain("Capability-aware runtime");
+    expect(html).toContain("12");
+    expect(html).toContain("Previewed");
+    expect(html).toContain("Context inclusion and trace evidence");
+    expect(html).toContain("case-ct-port");
   });
 });

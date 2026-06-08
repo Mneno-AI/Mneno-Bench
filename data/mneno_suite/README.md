@@ -12,3 +12,10 @@ budget, and explainability behavior without external data or model judges.
 Every referenced expected or forbidden memory ID is validated by the loader.
 The records are development fixtures and must not be presented as public
 benchmark results.
+
+Memory records preserve stable dataset IDs and include `session_id`,
+`sequence_index`, `memory_type`, `importance`, `tags`, lifecycle `status`, and
+optional `layer`. The loader also supports `expected_status`, `expected_layer`,
+`conflict_group`, `supersedes`, `stale`, and `noise`. During Core execution it
+derives `metadata.created_order` from `sequence_index` and retains all original
+metadata, including existing `supersedes`, `superseded_by`, and conflict links.

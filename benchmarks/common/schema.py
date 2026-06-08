@@ -35,9 +35,10 @@ class MetricResult(BaseModel):
     """A deterministic metric value and its interpretation."""
 
     name: str
-    value: float
+    value: float | None
     unit: str = "ratio"
     description: str = ""
+    unavailable_reason: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -88,6 +89,58 @@ class TraceSummary(BaseModel):
     raw_trace_reference: str | None = None
 
 
+class MnenoCapabilityReport(BaseModel):
+    """Runtime feature discovery for the installed optional Mneno SDK."""
+
+    available: bool
+    version: str | None = None
+    capabilities: dict[str, bool] = Field(default_factory=dict)
+    missing: list[str] = Field(default_factory=list)
+    partial: bool = False
+
+
+class MnenoMemoryLoadRecord(BaseModel):
+    """Dataset-to-Core identity and conflict facts from one memory insertion."""
+
+    dataset_memory_id: str
+    mneno_memory_id: str
+    conflict_reports: list[dict[str, Any]] = Field(default_factory=list)
+    resolution_actions: list[dict[str, Any] | str] = Field(default_factory=list)
+    trace_ids: list[str] = Field(default_factory=list)
+
+
+class MnenoExecutionSummary(BaseModel):
+    """Suite-level facts about realistic Mneno Core setup and execution."""
+
+    memories_loaded: int = 0
+    sessions_created: int = 0
+    conflicts_detected: int = 0
+    hierarchy_evaluated: bool = False
+    hierarchy_transitions: dict[str, int] = Field(default_factory=dict)
+    compaction_previewed: bool = False
+    compaction_stats: dict[str, int | float] = Field(default_factory=dict)
+    traces_exported: int = 0
+    session_id_map: dict[str, str] = Field(default_factory=dict)
+    memory_id_map: dict[str, str] = Field(default_factory=dict)
+    memory_loads: list[MnenoMemoryLoadRecord] = Field(default_factory=list)
+    capability_errors: dict[str, str] = Field(default_factory=dict)
+    capability_report: MnenoCapabilityReport
+
+
+class MnenoDecisionSummary(BaseModel):
+    """Normalized trace and context decisions for one suite case."""
+
+    retrieved_ids: list[str] = Field(default_factory=list)
+    included_ids: list[str] = Field(default_factory=list)
+    excluded_ids: list[str] = Field(default_factory=list)
+    trace_ids: list[str] = Field(default_factory=list)
+    inclusion_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    exclusion_reasons: dict[str, list[str]] = Field(default_factory=dict)
+    conflict_events: list[dict[str, Any]] = Field(default_factory=list)
+    hierarchy_events: list[dict[str, Any]] = Field(default_factory=list)
+    session_events: list[dict[str, Any]] = Field(default_factory=list)
+
+
 class BaselineResult(BaseModel):
     """Result emitted by a baseline retrieval strategy."""
 
@@ -108,6 +161,10 @@ class MnenoResult(BaseModel):
     context_tokens: int = 0
     latency_ms: float = 0.0
     trace_summary: TraceSummary | None = None
+    included_memory_ids: list[str] = Field(default_factory=list)
+    excluded_memory_ids: list[str] = Field(default_factory=list)
+    trace_ids: list[str] = Field(default_factory=list)
+    decision_summary: MnenoDecisionSummary | None = None
     skip_reason: str | None = None
     error: str | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)

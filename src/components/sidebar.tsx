@@ -74,9 +74,9 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
           })}
         </nav>
         <div className="absolute bottom-6 left-4 right-4 border-t border-ink-950/10 pt-4">
-          <p className="font-mono text-xs text-ink-600">STEP 1 / LOCAL JSON</p>
+          <p className="font-mono text-xs text-ink-600">STEP 4 / CORE-AWARE</p>
           <p className="mt-1 text-xs leading-5 text-ink-600">
-            No API key, database, or external dataset required.
+            Deterministic local runs. Mneno remains optional.
           </p>
         </div>
       </aside>
@@ -92,7 +92,7 @@ function Brand() {
       </span>
       <div>
         <p className="text-sm font-semibold leading-4">Mneno Bench</p>
-        <p className="font-mono text-[11px] leading-4 text-ink-600">v0.1 skeleton</p>
+        <p className="font-mono text-[11px] leading-4 text-ink-600">v0.4 context rot</p>
       </div>
     </div>
   );

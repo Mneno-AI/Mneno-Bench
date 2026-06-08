@@ -16,8 +16,8 @@ DEFAULT_CONTEXT_ROT_WEIGHTS: dict[str, float] = {
 
 
 def calculate_context_rot_score(
-    metrics: Mapping[str, float], weights: Mapping[str, float] | None = None
-) -> float:
+    metrics: Mapping[str, float | None], weights: Mapping[str, float] | None = None
+) -> float | None:
     configured = dict(weights or DEFAULT_CONTEXT_ROT_WEIGHTS)
     if not configured:
         raise ValueError("Context Rot Score weights cannot be empty.")
@@ -28,11 +28,21 @@ def calculate_context_rot_score(
         raise ValueError("Context Rot Score weights must have a positive sum.")
 
     values = dict(metrics)
-    values["forbidden_memory_error_rate_inverse"] = 1.0 - values.get(
-        "forbidden_memory_error_rate", 0.0
+    forbidden_error = values.get("forbidden_memory_error_rate")
+    values["forbidden_memory_error_rate_inverse"] = (
+        None if forbidden_error is None else 1.0 - forbidden_error
     )
-    weighted = sum(
-        min(max(values.get(name, 0.0), 0.0), 1.0) * weight
+    available = [
+        (name, weight, values.get(name))
         for name, weight in configured.items()
+        if values.get(name) is not None
+    ]
+    if not available:
+        return None
+    available_weight = sum(weight for _, weight, _ in available)
+    weighted = sum(
+        min(max(float(value), 0.0), 1.0) * weight
+        for _, weight, value in available
+        if value is not None
     )
-    return round(weighted / total_weight, 6)
+    return round(weighted / available_weight, 6)

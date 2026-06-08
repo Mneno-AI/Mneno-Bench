@@ -100,6 +100,14 @@ service. The benchmark container mounts `benchmarks/`, `data/`, `results/`,
 - Normalize SDK output only for comparison and dashboard consumption.
 - Keep SDK-specific object conversion inside the adapter.
 - Preserve Mneno trace and lifecycle semantics when normalizing Core exports.
+- Exercise real Mneno session, conflict, hierarchy, compaction-preview, and
+  context-building behavior whenever the installed SDK supports it.
+- Missing or signature-incompatible Mneno capabilities must degrade gracefully.
+- Never fabricate a metric that depends on unavailable Core behavior; preserve
+  it as unavailable with a reason.
+- Keep dataset memory IDs stable and normalize generated Core IDs through an
+  explicit bidirectional mapping.
+- Use trace decisions and reasons for explainability metrics where possible.
 
 ## Result Schema
 

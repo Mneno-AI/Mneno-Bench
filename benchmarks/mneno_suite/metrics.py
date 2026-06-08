@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 
-from benchmarks.common.schema import TraceSummary
+from benchmarks.common.schema import MnenoDecisionSummary, TraceSummary
 from benchmarks.common.utils import estimate_tokens
 from benchmarks.mneno_suite.dataset import MnenoSuiteMemory
 
@@ -127,15 +127,29 @@ def compaction_retention_score(
 
 
 def explainability_coverage_score(
-    retrieved_ids: Sequence[str], trace_summary: TraceSummary | None
+    retrieved_ids: Sequence[str],
+    trace_summary: TraceSummary | None,
+    decision_summary: MnenoDecisionSummary | None = None,
 ) -> float:
-    if trace_summary is None:
+    if trace_summary is None and decision_summary is None:
         return 0.0
-    evidence_count = (
-        len(trace_summary.explanations)
-        + trace_summary.decision_count
-        + trace_summary.event_count
-    )
+    evidence_count = 0
+    if trace_summary is not None:
+        evidence_count += (
+            len(trace_summary.explanations)
+            + trace_summary.decision_count
+            + trace_summary.event_count
+        )
+    if decision_summary is not None:
+        evidence_count += sum(
+            len(reasons) for reasons in decision_summary.inclusion_reasons.values()
+        )
+        evidence_count += sum(
+            len(reasons) for reasons in decision_summary.exclusion_reasons.values()
+        )
+        evidence_count += len(decision_summary.conflict_events)
+        evidence_count += len(decision_summary.hierarchy_events)
+        evidence_count += len(decision_summary.session_events)
     return min(_ratio(evidence_count, max(len(set(retrieved_ids)), 1)), 1.0)
 
 

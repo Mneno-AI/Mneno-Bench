@@ -5,6 +5,8 @@ import type {
   ContextRotCategorySummary,
   ContextRotSummary,
   ContextRotSystemSummary,
+  MnenoCaseDecisionSummary,
+  MnenoExecutionSummary,
   MetricResult,
   MnenoBenchmarkExport,
   MnenoTraceExport,
@@ -126,6 +128,10 @@ export function parseBenchmarkRun(value: unknown): BenchmarkRun {
   const contextRot = parseContextRotSummary(
     asObject(metadata?.context_rot_suite),
   );
+  const mnenoExecution = parseMnenoExecution(
+    asObject(metadata?.mneno_execution),
+    results,
+  );
 
   return {
     id: raw.run_id,
@@ -147,6 +153,7 @@ export function parseBenchmarkRun(value: unknown): BenchmarkRun {
           ? metadata.mneno_version
           : null,
     contextRot,
+    mnenoExecution,
     rawExport: value,
   };
 }
@@ -270,7 +277,7 @@ function parseContextRotSystem(
     status: parseStatus(value.status),
     contextRotScore:
       typeof value.context_rot_score === "number" ? value.context_rot_score : null,
-    metrics: numberRecord(value.metrics),
+    metrics: nullableNumberRecord(value.metrics),
     categories,
   };
 }
@@ -279,14 +286,71 @@ function parseContextRotCategory(
   category: string,
   value: JsonObject | null,
 ): ContextRotCategorySummary | null {
-  if (!value || typeof value.context_rot_score !== "number") {
+  if (!value) {
     return null;
   }
   return {
     category,
     caseCount: numberValue(value.case_count),
-    contextRotScore: value.context_rot_score,
-    metrics: numberRecord(value.metrics),
+    contextRotScore:
+      typeof value.context_rot_score === "number" ? value.context_rot_score : null,
+    metrics: nullableNumberRecord(value.metrics),
+  };
+}
+
+function parseMnenoExecution(
+  value: JsonObject | null,
+  results: unknown[],
+): MnenoExecutionSummary | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const capability = asObject(value.capability_report) ?? {};
+  return {
+    memoriesLoaded: numberValue(value.memories_loaded),
+    sessionsCreated: numberValue(value.sessions_created),
+    conflictsDetected: numberValue(value.conflicts_detected),
+    hierarchyEvaluated: value.hierarchy_evaluated === true,
+    hierarchyTransitions: numberRecord(value.hierarchy_transitions),
+    compactionPreviewed: value.compaction_previewed === true,
+    compactionStats: numberRecord(value.compaction_stats),
+    tracesExported: numberValue(value.traces_exported),
+    capabilityErrors: stringRecord(value.capability_errors),
+    capabilityReport: {
+      available: capability.available === true,
+      version: typeof capability.version === "string" ? capability.version : null,
+      capabilities: booleanRecord(capability.capabilities),
+      missing: asArray(capability.missing).map(String),
+      partial: capability.partial === true,
+    },
+    decisions: results
+      .map(parseDecisionSummary)
+      .filter((decision): decision is MnenoCaseDecisionSummary => decision !== null),
+  };
+}
+
+function parseDecisionSummary(value: unknown): MnenoCaseDecisionSummary | null {
+  const result = asObject(value);
+  const benchmarkCase = asObject(result?.case);
+  const mneno = asObject(result?.mneno_result);
+  const decision = asObject(mneno?.decision_summary);
+  if (!benchmarkCase || !decision || typeof benchmarkCase.id !== "string") {
+    return null;
+  }
+  const inclusion = asObject(decision.inclusion_reasons) ?? {};
+  const exclusion = asObject(decision.exclusion_reasons) ?? {};
+  let reasonCount = 0;
+  for (const reasons of [...Object.values(inclusion), ...Object.values(exclusion)]) {
+    reasonCount += asArray(reasons).length;
+  }
+  const metadata = asObject(benchmarkCase.metadata);
+  return {
+    caseId: benchmarkCase.id,
+    category: typeof metadata?.category === "string" ? metadata.category : "unknown",
+    includedIds: asArray(decision.included_ids).map(String),
+    excludedIds: asArray(decision.excluded_ids).map(String),
+    traceIds: asArray(decision.trace_ids).map(String),
+    reasonCount,
   };
 }
 
@@ -387,6 +451,43 @@ function numberRecord(value: unknown): Record<string, number> {
   return Object.fromEntries(
     Object.entries(object).filter(
       (entry): entry is [string, number] => typeof entry[1] === "number",
+    ),
+  );
+}
+
+function nullableNumberRecord(value: unknown): Record<string, number | null> {
+  const object = asObject(value);
+  if (!object) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(object).filter(
+      (entry): entry is [string, number | null] =>
+        typeof entry[1] === "number" || entry[1] === null,
+    ),
+  );
+}
+
+function booleanRecord(value: unknown): Record<string, boolean> {
+  const object = asObject(value);
+  if (!object) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(object).filter(
+      (entry): entry is [string, boolean] => typeof entry[1] === "boolean",
+    ),
+  );
+}
+
+function stringRecord(value: unknown): Record<string, string> {
+  const object = asObject(value);
+  if (!object) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(object).filter(
+      (entry): entry is [string, string] => typeof entry[1] === "string",
     ),
   );
 }

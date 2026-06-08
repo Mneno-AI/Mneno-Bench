@@ -1,4 +1,12 @@
-import { FileText, GitCompareArrows, Route, SearchCheck } from "lucide-react";
+import {
+  FileText,
+  GitCompareArrows,
+  Layers3,
+  Route,
+  SearchCheck,
+  Split,
+  Users,
+} from "lucide-react";
 
 import { StatusBadge } from "../components/runs-table";
 import { latestRun } from "../lib/runs";
@@ -14,6 +22,7 @@ const systemLabels: Record<string, string> = {
 
 export function MnenoSuitePage({ run = latestRun }: { run?: BenchmarkRun }) {
   const summary = run.contextRot;
+  const execution = run.mnenoExecution;
   const mneno = summary?.systems.find((system) => system.name === "mneno");
 
   return (
@@ -57,6 +66,56 @@ export function MnenoSuitePage({ run = latestRun }: { run?: BenchmarkRun }) {
               detail={`${summary.memoryCount} memories`}
             />
           </section>
+
+          {execution ? (
+            <section className="rounded-lg border border-ink-950/10 bg-white shadow-panel">
+              <div className="flex flex-col gap-3 border-b border-ink-950/10 p-5 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="font-mono text-xs uppercase text-signal-700">Core execution</p>
+                  <h2 className="mt-1 text-lg font-semibold">Capability-aware runtime</h2>
+                </div>
+                <StatusBadge
+                  status={execution.capabilityReport.available ? "completed" : "skipped"}
+                />
+              </div>
+              <div className="grid gap-px bg-ink-950/10 sm:grid-cols-3 lg:grid-cols-6">
+                <ExecutionValue icon={Users} label="Sessions" value={execution.sessionsCreated} />
+                <ExecutionValue icon={SearchCheck} label="Memories" value={execution.memoriesLoaded} />
+                <ExecutionValue icon={Split} label="Conflicts" value={execution.conflictsDetected} />
+                <ExecutionValue icon={Layers3} label="Hierarchy" value={execution.hierarchyEvaluated ? "Yes" : "No"} />
+                <ExecutionValue icon={GitCompareArrows} label="Compaction" value={execution.compactionPreviewed ? "Previewed" : "Unavailable"} />
+                <ExecutionValue icon={Route} label="Traces" value={execution.tracesExported} />
+              </div>
+              <div className="grid gap-5 border-t border-ink-950/10 p-5 lg:grid-cols-2">
+                <div>
+                  <h3 className="text-sm font-semibold">Capabilities</h3>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {Object.entries(execution.capabilityReport.capabilities).map(([name, supported]) => (
+                      <span
+                        key={name}
+                        className={`rounded-full px-2.5 py-1 font-mono text-[11px] ${supported ? "bg-emerald-100 text-emerald-800" : "bg-slate-100 text-slate-700"}`}
+                      >
+                        {name}: {supported ? "yes" : "no"}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-sm font-semibold">Missing or degraded</h3>
+                  <p className="mt-3 text-sm leading-6 text-ink-600">
+                    {execution.capabilityReport.missing.length
+                      ? execution.capabilityReport.missing.join(", ")
+                      : "All tracked capabilities available."}
+                  </p>
+                  {Object.keys(execution.capabilityErrors).length ? (
+                    <p className="mt-2 text-xs text-red-700">
+                      {Object.keys(execution.capabilityErrors).length} capability invocation error(s) recorded.
+                    </p>
+                  ) : null}
+                </div>
+              </div>
+            </section>
+          ) : null}
 
           <section className="overflow-hidden rounded-lg border border-ink-950/10 bg-white shadow-panel">
             <div className="border-b border-ink-950/10 p-5">
@@ -145,6 +204,41 @@ export function MnenoSuitePage({ run = latestRun }: { run?: BenchmarkRun }) {
               <code className="text-xs text-ink-600">{summary.reportPath}</code>
             )}
           </section>
+
+          {execution?.decisions.length ? (
+            <section className="overflow-hidden rounded-lg border border-ink-950/10 bg-white shadow-panel">
+              <div className="border-b border-ink-950/10 p-5">
+                <p className="font-mono text-xs uppercase text-signal-700">Case decisions</p>
+                <h2 className="mt-1 text-lg font-semibold">Context inclusion and trace evidence</h2>
+              </div>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[700px] text-left text-sm">
+                  <thead className="bg-canvas/70 text-xs uppercase text-ink-600">
+                    <tr>
+                      <th className="px-5 py-3 font-semibold">Case</th>
+                      <th className="px-5 py-3 font-semibold">Category</th>
+                      <th className="px-5 py-3 text-right font-semibold">Included</th>
+                      <th className="px-5 py-3 text-right font-semibold">Excluded</th>
+                      <th className="px-5 py-3 text-right font-semibold">Traces</th>
+                      <th className="px-5 py-3 text-right font-semibold">Reasons</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {execution.decisions.map((decision) => (
+                      <tr key={decision.caseId} className="border-t border-ink-950/10">
+                        <td className="px-5 py-4 font-mono text-xs">{decision.caseId}</td>
+                        <td className="px-5 py-4">{categoryLabel(decision.category)}</td>
+                        <td className="px-5 py-4 text-right font-mono">{decision.includedIds.length}</td>
+                        <td className="px-5 py-4 text-right font-mono">{decision.excludedIds.length}</td>
+                        <td className="px-5 py-4 text-right font-mono">{decision.traceIds.length}</td>
+                        <td className="px-5 py-4 text-right font-mono">{decision.reasonCount}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </section>
+          ) : null}
         </div>
       )}
     </>
@@ -179,6 +273,26 @@ function ScoreCell({ value, strong = false }: { value: number | null | undefined
     <td className={`px-5 py-4 text-right font-mono tabular-nums ${strong ? "font-semibold" : ""}`}>
       {formatScore(value)}
     </td>
+  );
+}
+
+function ExecutionValue({
+  icon: Icon,
+  label,
+  value,
+}: {
+  icon: typeof Users;
+  label: string;
+  value: string | number;
+}) {
+  return (
+    <div className="bg-white p-4">
+      <div className="flex items-center gap-2 text-ink-600">
+        <Icon aria-hidden="true" size={16} />
+        <p className="text-xs uppercase">{label}</p>
+      </div>
+      <p className="mt-2 font-mono text-lg font-semibold tabular-nums">{value}</p>
+    </div>
   );
 }
 

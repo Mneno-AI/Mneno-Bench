@@ -35,21 +35,53 @@ export interface BenchmarkRun {
   benchmarkVersion: string;
   mnenoVersion: string | null;
   contextRot?: ContextRotSummary;
+  mnenoExecution?: MnenoExecutionSummary;
   rawExport?: unknown;
+}
+
+export interface MnenoCapabilityReport {
+  available: boolean;
+  version: string | null;
+  capabilities: Record<string, boolean>;
+  missing: string[];
+  partial: boolean;
+}
+
+export interface MnenoCaseDecisionSummary {
+  caseId: string;
+  category: string;
+  includedIds: string[];
+  excludedIds: string[];
+  traceIds: string[];
+  reasonCount: number;
+}
+
+export interface MnenoExecutionSummary {
+  memoriesLoaded: number;
+  sessionsCreated: number;
+  conflictsDetected: number;
+  hierarchyEvaluated: boolean;
+  hierarchyTransitions: Record<string, number>;
+  compactionPreviewed: boolean;
+  compactionStats: Record<string, number>;
+  tracesExported: number;
+  capabilityErrors: Record<string, string>;
+  capabilityReport: MnenoCapabilityReport;
+  decisions: MnenoCaseDecisionSummary[];
 }
 
 export interface ContextRotCategorySummary {
   category: string;
   caseCount: number;
-  contextRotScore: number;
-  metrics: Record<string, number>;
+  contextRotScore: number | null;
+  metrics: Record<string, number | null>;
 }
 
 export interface ContextRotSystemSummary {
   name: string;
   status: RunStatus;
   contextRotScore: number | null;
-  metrics: Record<string, number>;
+  metrics: Record<string, number | null>;
   categories: ContextRotCategorySummary[];
 }
 

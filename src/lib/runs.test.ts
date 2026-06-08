@@ -110,6 +110,24 @@ describe("dashboard result parsing", () => {
       systems: ["keyword_baseline", "mneno"],
       results: [{ mneno_result: { status: "skipped" } }],
       export_metadata: {
+        mneno_execution: {
+          memories_loaded: 48,
+          sessions_created: 12,
+          conflicts_detected: 2,
+          hierarchy_evaluated: true,
+          hierarchy_transitions: { promoted: 1 },
+          compaction_previewed: true,
+          compaction_stats: { kept: 46 },
+          traces_exported: 24,
+          capability_errors: {},
+          capability_report: {
+            available: true,
+            version: "0.4.0",
+            capabilities: { build_context: true },
+            missing: [],
+            partial: false,
+          },
+        },
         context_rot_suite: {
           dataset: { memory_count: 48, case_count: 24 },
           systems: {
@@ -150,6 +168,14 @@ describe("dashboard result parsing", () => {
       category: "contradiction",
       caseCount: 3,
       contextRotScore: 0.7,
+    });
+    expect(run.mnenoExecution).toMatchObject({
+      memoriesLoaded: 48,
+      sessionsCreated: 12,
+      conflictsDetected: 2,
+      hierarchyEvaluated: true,
+      compactionPreviewed: true,
+      tracesExported: 24,
     });
   });
 });

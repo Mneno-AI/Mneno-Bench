@@ -25,3 +25,19 @@ def test_context_rot_score_accepts_custom_weights() -> None:
 
     with pytest.raises(ValueError, match="positive sum"):
         calculate_context_rot_score({}, {"expected_memory_recall": 0.0})
+
+
+def test_context_rot_score_ignores_unavailable_metrics() -> None:
+    assert (
+        calculate_context_rot_score(
+            {"expected_memory_recall": 0.5, "context_efficiency_score": None},
+            {"expected_memory_recall": 1.0, "context_efficiency_score": 1.0},
+        )
+        == 0.5
+    )
+    assert (
+        calculate_context_rot_score(
+            {"expected_memory_recall": None}, {"expected_memory_recall": 1.0}
+        )
+        is None
+    )

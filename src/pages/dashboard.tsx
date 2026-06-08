@@ -11,7 +11,7 @@ export function DashboardPage({
       <PageHeader
         eyebrow="Mneno-first evaluation"
         title="Context integrity, measured."
-        description="Step 1 validates whether Mneno can outperform simple context baselines before public benchmark claims are introduced."
+        description="Step 4 validates Mneno against transparent baselines with capability-aware Core execution, lifecycle evaluation, compaction previews, and trace evidence."
       />
       <Dashboard onNavigate={onNavigate} />
     </>

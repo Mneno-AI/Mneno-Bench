@@ -32,11 +32,34 @@ class MnenoSuiteMemory(BaseModel):
     session_id: str | None = None
     sequence_index: int | None = Field(default=None, ge=0)
     tags: list[str] = Field(default_factory=list)
+    expected_status: str | None = None
+    expected_layer: str | None = None
+    conflict_group: str | None = None
+    supersedes: str | None = None
+    stale: bool | None = None
+    noise: bool | None = None
     metadata: dict[str, Any] = Field(default_factory=dict)
 
     def as_benchmark_memory(self) -> dict[str, Any]:
         value = self.model_dump(mode="json")
         value["text"] = self.content
+        metadata = dict(value["metadata"])
+        metadata.setdefault("created_order", self.sequence_index)
+        metadata.setdefault("expected_status", self.expected_status or self.status)
+        metadata.setdefault("expected_layer", self.expected_layer or self.layer)
+        metadata.setdefault("conflict_group", self.conflict_group)
+        metadata.setdefault("supersedes", self.supersedes or metadata.get("supersedes"))
+        metadata.setdefault(
+            "stale",
+            self.stale
+            if self.stale is not None
+            else (self.status in {"stale", "superseded", "rejected"}),
+        )
+        metadata.setdefault(
+            "noise",
+            self.noise if self.noise is not None else ("noise" in self.tags),
+        )
+        value["metadata"] = metadata
         return value
 
 

@@ -30,6 +30,37 @@ class FakeClient:
         }
 
 
+class RealShapeClient:
+    def __init__(self) -> None:
+        self.added: dict[str, Any] = {}
+
+    def add(
+        self,
+        content: str,
+        *,
+        memory_type: str,
+        metadata: dict[str, Any],
+        session_id: str | None = None,
+        layer: str | None = None,
+    ) -> dict[str, Any]:
+        self.added = {
+            "content": content,
+            "memory_type": memory_type,
+            "metadata": metadata,
+            "session_id": session_id,
+            "layer": layer,
+        }
+        return {"id": "internal-1"}
+
+    def evaluate_search(self, query: str, limit: int) -> dict[str, Any]:
+        return {
+            "query": query,
+            "metrics": [{"name": "retrieval_recall", "value": 1.0}],
+            "selected_memory_ids": ["internal-1"],
+            "limit": limit,
+        }
+
+
 def test_adapter_detects_version_and_calls_evaluation() -> None:
     module = SimpleNamespace(__version__="0.3.4", MemoryClient=FakeClient)
     adapter = MnenoAdapter()
@@ -73,6 +104,32 @@ def test_adapter_calls_root_exports() -> None:
     assert adapter.export_trace(trace_id="trace-1")["trace"]["id"] == "trace-1"
     assert adapter.export_all_traces() == []
     assert adapter.export_benchmark(result={"metrics": {}})["version"] == 1
+
+
+def test_adapter_supports_real_sdk_insertion_and_metric_shapes() -> None:
+    adapter = MnenoAdapter()
+    client = RealShapeClient()
+    adapter.add_memory(
+        client,
+        {
+            "id": "dataset-1",
+            "content": "Current task",
+            "memory_type": "task",
+            "layer": "archive",
+            "session_id": "session-1",
+            "metadata": {},
+        },
+    )
+
+    assert client.added["content"] == "Current task"
+    assert client.added["memory_type"] == "operational"
+    assert client.added["layer"] == "archived"
+    assert client.added["metadata"]["dataset_memory_id"] == "dataset-1"
+
+    result = adapter.evaluate_search(
+        client=client, query="task", limit=4, unsupported=True
+    )
+    assert result.metrics == {"retrieval_recall": 1.0}
 
 
 def test_adapter_missing_sdk_has_clear_error(monkeypatch: pytest.MonkeyPatch) -> None:

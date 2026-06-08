@@ -19,7 +19,7 @@ Mneno Bench starts with a proprietary Mneno Context Rot Suite because the first
 job is product validation. Public benchmarks come later as independent
 validation layers, not as substitutes for testing Mneno's actual contract.
 
-## Step 3 Scope
+## Step 4 Scope
 
 The current repository provides:
 
@@ -31,6 +31,9 @@ The current repository provides:
 - System-independent metric comparison.
 - Mneno Context Rot Suite v1 with 48 synthetic memories and 24 deterministic
   cases across eight Mneno-specific failure categories.
+- Capability-aware Mneno Core execution with sessions, ordered insertion,
+  conflict reports, hierarchy evaluation, compaction preview, per-case context
+  building, memory-ID normalization, and trace decision analysis.
 - Pydantic v2 result schemas and local JSON result storage.
 - A React dashboard that reads generated local result JSON at build/dev time.
 - LiteLLM-ready provider configuration behind one client abstraction.
@@ -170,6 +173,33 @@ Their raw results, trace IDs, provider, query, and metric values remain attached
 to the normalized models. The normalization layer hides SDK version and
 baseline shape differences without replacing the authoritative Core exports.
 
+## Realistic Mneno Core Execution
+
+When Mneno is installed, the suite discovers supported runtime capabilities
+before execution. It creates stable synthetic sessions where supported, inserts
+memories in `session_id`, `sequence_index`, and dataset-ID order, and prefers
+`add_with_report()` so conflict reports, resolution actions, internal memory
+IDs, and insertion traces can be preserved.
+
+After loading memory, the runner calls `evaluate_hierarchy()` and
+`preview_compaction()` when available. Hierarchy transitions and compaction
+preview statistics are stored in the execution summary; preview output is used
+for compaction-retention metrics without mutating Core storage.
+
+Every case calls search and context evaluation when supported, then calls
+`build_context()` with the case budget and current session. Mneno-generated IDs
+are mapped back to stable dataset IDs before deterministic metrics are computed.
+Included and excluded context IDs, trace IDs, conflict events, hierarchy events,
+session events, and inclusion/exclusion reasons are retained per case.
+
+The tracked capabilities are `add_with_report`, `evaluate_search`,
+`evaluate_context`, `evaluate_compaction`, `build_context`, `create_session`,
+`evaluate_hierarchy`, `preview_compaction`, `export_trace`, and
+`export_all_traces`. Missing or signature-incompatible capabilities are recorded
+and skipped without failing baseline execution. Metrics that require unavailable
+hierarchy, context, compaction, or trace evidence remain `null` and are omitted
+from the weighted denominator rather than fabricated as zero.
+
 ## Run the Demo
 
 ```bash
@@ -228,13 +258,16 @@ must be enabled explicitly by a future benchmark runner.
 1. The runner detects Mneno and records the Core version.
 2. One traced `MemoryClient` is populated from the suite fixture with lifecycle,
    importance, layer, tag, and session metadata.
-3. Each case executes search evaluation, plus context or compaction evaluation
-   where the category requires it.
-4. Core benchmark and trace exports are preserved as local JSON.
-5. Loaders validate v1 envelopes and produce `BenchmarkRun`, `BenchmarkResult`,
+3. Core conflict reports, hierarchy evaluation, and compaction preview are
+   captured when supported.
+4. Each case executes search/context evaluation and builds session-aware context
+   where supported.
+5. Core benchmark and trace exports are preserved as local JSON.
+6. Loaders validate v1 envelopes and produce `BenchmarkRun`, `BenchmarkResult`,
    and `TraceSummary` models.
-6. Baseline and Mneno normalized results can be passed to `compare_results()`.
-7. The dashboard parses durable local runs and exposes version and trace data.
+7. Baseline and Mneno normalized results can be passed to `compare_results()`.
+8. The dashboard parses capabilities, execution summaries, case decisions, and
+   trace evidence from durable local runs.
 
 ## Why Public Benchmarks Come Later
 
@@ -249,8 +282,9 @@ respect upstream licenses and must never fabricate scores.
 
 1. Mneno Core export and trace integration: complete
 2. Mneno Context Rot Suite v1: complete
-3. Richer lifecycle/session setup and trace-level decision explanations
-4. UI comparison and trace exploration
-5. LOCOMO
-6. LongMemEval
-7. BEAM
+3. Richer lifecycle/session setup and trace-level decision explanations: complete
+4. Regression tracking across Mneno versions
+5. UI comparison and trace exploration
+6. LOCOMO
+7. LongMemEval
+8. BEAM

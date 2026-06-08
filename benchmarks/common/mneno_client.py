@@ -55,6 +55,18 @@ class MnenoAdapter:
             raise RuntimeError("The installed Mneno SDK does not expose MemoryClient.")
         return client_type(**kwargs)
 
+    def supports(self, name: str, client: Any | None = None) -> bool:
+        return callable(getattr(client, name, None)) or callable(
+            self._resolve_attribute(name)
+        )
+
+    def call_optional(
+        self, name: str, *args: Any, client: Any | None = None, **kwargs: Any
+    ) -> Any:
+        if not self.supports(name, client=client):
+            raise AttributeError(f"Mneno capability {name} is unavailable.")
+        return self._call_sdk(name, *args, client=client, **kwargs)
+
     def evaluate_search(self, *args: Any, **kwargs: Any) -> NormalizedSearchResult:
         raw = self._call_sdk("evaluate_search", *args, **kwargs)
         return NormalizedSearchResult(
@@ -95,29 +107,63 @@ class MnenoAdapter:
     def export_benchmark(self, *args: Any, **kwargs: Any) -> Any:
         return _to_jsonable(self._call_sdk("export_benchmark_result", *args, **kwargs))
 
+    def create_session(self, *args: Any, **kwargs: Any) -> Any:
+        return _to_jsonable(self._call_sdk("create_session", *args, **kwargs))
+
+    def add_with_report(self, client: Any, memory: Mapping[str, Any]) -> Any:
+        kwargs = self._memory_kwargs(memory)
+        return _to_jsonable(
+            self._call_sdk(
+                "add_with_report",
+                client=client,
+                memory=dict(memory),
+                **kwargs,
+            )
+        )
+
+    def build_context(self, *args: Any, **kwargs: Any) -> Any:
+        return _to_jsonable(self._call_sdk("build_context", *args, **kwargs))
+
+    def evaluate_hierarchy(self, *args: Any, **kwargs: Any) -> Any:
+        return _to_jsonable(self._call_sdk("evaluate_hierarchy", *args, **kwargs))
+
+    def preview_compaction(self, *args: Any, **kwargs: Any) -> Any:
+        return _to_jsonable(self._call_sdk("preview_compaction", *args, **kwargs))
+
     def add_memory(self, client: Any, memory: Mapping[str, Any]) -> Any:
         method = getattr(client, "add_memory", None) or getattr(client, "add", None)
         if not callable(method):
             raise RuntimeError("Mneno MemoryClient does not expose add_memory/add.")
-        try:
-            return method(dict(memory))
-        except TypeError:
-            return method(
-                text=str(memory.get("text", "")),
-                memory_id=str(memory["id"]),
-                metadata={
-                    **dict(memory.get("metadata", {})),
-                    "memory_type": memory.get("memory_type"),
-                    "layer": memory.get("layer"),
-                    "status": memory.get("status"),
-                    "importance": memory.get("importance"),
-                    "session_id": memory.get("session_id"),
-                    "sequence_index": memory.get("sequence_index"),
-                    "tags": memory.get("tags", []),
-                    "superseded_by": memory.get("superseded_by"),
-                    "created_at": memory.get("created_at"),
-                },
-            )
+        return _to_jsonable(_invoke(method, (), self._memory_kwargs(memory)))
+
+    def _memory_kwargs(self, memory: Mapping[str, Any]) -> dict[str, Any]:
+        content = str(memory.get("content", memory.get("text", "")))
+        return {
+            "text": content,
+            "content": content,
+            "memory_id": str(memory["id"]),
+            "metadata": self._memory_metadata(memory),
+            "session_id": memory.get("session_id"),
+            "memory_type": _normalize_memory_type(memory.get("memory_type")),
+            "importance": memory.get("importance"),
+            "tags": memory.get("tags", []),
+            "layer": _normalize_memory_layer(memory.get("layer")),
+        }
+
+    def _memory_metadata(self, memory: Mapping[str, Any]) -> dict[str, Any]:
+        return {
+            **dict(memory.get("metadata", {})),
+            "dataset_memory_id": str(memory["id"]),
+            "memory_type": memory.get("memory_type"),
+            "layer": memory.get("layer"),
+            "status": memory.get("status"),
+            "importance": memory.get("importance"),
+            "session_id": memory.get("session_id"),
+            "sequence_index": memory.get("sequence_index"),
+            "tags": memory.get("tags", []),
+            "superseded_by": memory.get("superseded_by"),
+            "created_at": memory.get("created_at"),
+        }
 
     def search(self, client: Any, query: str, k: int = 3) -> Any:
         method = getattr(client, "search", None) or getattr(client, "retrieve", None)
@@ -239,6 +285,22 @@ def _extract_metrics(value: Any) -> dict[str, float | int | None]:
     metrics = _value(value, "metrics", {})
     if hasattr(metrics, "model_dump"):
         metrics = metrics.model_dump(mode="json")
+    if isinstance(metrics, Iterable) and not isinstance(
+        metrics, (str, bytes, Mapping)
+    ):
+        metric_values: dict[str, float | int | None] = {}
+        for metric in metrics:
+            name = _value(metric, "name")
+            metric_value = _value(metric, "value")
+            if name is not None and (
+                metric_value is None
+                or (
+                    isinstance(metric_value, (int, float))
+                    and not isinstance(metric_value, bool)
+                )
+            ):
+                metric_values[str(name)] = metric_value
+        return metric_values
     if not isinstance(metrics, Mapping):
         return {}
     normalized: dict[str, float | int | None] = {}
@@ -250,6 +312,27 @@ def _extract_metrics(value: Any) -> dict[str, float | int | None]:
         ):
             normalized[str(key)] = metric_value
     return normalized
+
+
+def _normalize_memory_type(value: Any) -> str:
+    memory_type = str(value or "semantic").lower()
+    return {
+        "artifact": "operational",
+        "decision": "semantic",
+        "fact": "semantic",
+        "note": "episodic",
+        "requirement": "semantic",
+        "session_summary": "episodic",
+        "task": "operational",
+        "ui_detail": "episodic",
+    }.get(memory_type, memory_type)
+
+
+def _normalize_memory_layer(value: Any) -> str | None:
+    if value is None:
+        return None
+    layer = str(value).lower()
+    return "archived" if layer == "archive" else layer
 
 
 def _extract_trace_id(value: Any) -> str | None:

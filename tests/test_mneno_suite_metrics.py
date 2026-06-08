@@ -1,4 +1,4 @@
-from benchmarks.common.schema import TraceSummary
+from benchmarks.common.schema import MnenoDecisionSummary, TraceSummary
 from benchmarks.mneno_suite.dataset import MnenoSuiteMemory
 from benchmarks.mneno_suite.metrics import (
     compaction_retention_score,
@@ -72,4 +72,6 @@ def test_compaction_retention_and_explainability() -> None:
     assert compaction_retention_score([], ["active"], memories) == 0.0
     trace = TraceSummary(decision_count=1, event_count=1)
     assert explainability_coverage_score(["active", "stale"], trace) == 1.0
+    decisions = MnenoDecisionSummary(inclusion_reasons={"active": ["current session"]})
+    assert explainability_coverage_score(["active"], None, decisions) == 1.0
     assert explainability_coverage_score(["active"], None) == 0.0

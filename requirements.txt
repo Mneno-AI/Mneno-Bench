@@ -8,3 +8,4 @@ litellm>=1.60,<2
 pytest>=8.3,<9
 ruff>=0.9,<1
 mypy>=1.14,<2
+mneno==0.3.0a1
