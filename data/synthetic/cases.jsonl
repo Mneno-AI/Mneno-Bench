@@ -1,0 +1,3 @@
+{"id":"case-project","query":"What is the user building and what problem does it address?","expected_memory_ids":["mem-001"],"stale_memory_ids":[],"tags":["session-continuity","retrieval"]}
+{"id":"case-python","query":"Which Python version should be used for Mneno Bench?","expected_memory_ids":["mem-002"],"stale_memory_ids":["mem-003"],"tags":["preference-change","stale-suppression","conflict"]}
+{"id":"case-task","query":"What is the current implementation task for Mneno Bench?","expected_memory_ids":["mem-004"],"stale_memory_ids":[],"tags":["lifecycle","retrieval"]}

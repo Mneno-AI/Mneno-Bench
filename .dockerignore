@@ -1,0 +1,13 @@
+.git
+.env
+.venv
+node_modules
+dist
+results/mneno/*.json
+results/baselines/*.json
+results/reports/*.md
+__pycache__
+*.pyc
+.mypy_cache
+.pytest_cache
+.ruff_cache

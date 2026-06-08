@@ -1,41 +1,41 @@
-# Dependencies
-node_modules/
-.next/
-__pycache__/
-*.pyc
-.venv/
-venv/
-
-# Database
-evals.db
-evals.db-wal
-evals.db-shm
-
-# Outputs
-results/
-!results/platform/
-!results/platform/**
-!results/oss/
-!results/oss/**
-datasets/
-logs/
-evaluation_results/
-
-# Environment
+.DS_Store
 .env
 .env.local
 .env.*.local
-
-# IDE
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+node_modules/
+dist/
+tsconfig.tsbuildinfo
+*.egg-info/
 .vscode/
 .idea/
 *.swp
 *.swo
-.DS_Store
+logs/
 
-# Build
-tsconfig.tsbuildinfo
-next-env.d.ts
-
-# Wheel file of the library
+results/mneno/*.json
+results/mneno/exports/*.json
+results/mneno/traces/*.json
+results/baselines/*.json
+results/reports/*.md
+vendor/wheels/*.whl
 mneno-*.whl
+data/locomo/*
+data/longmemeval/*
+data/beam/*
+
+!results/mneno/.gitkeep
+!results/baselines/.gitkeep
+!results/reports/.gitkeep
+!vendor/wheels/.gitkeep
+!data/locomo/.gitkeep
+!data/longmemeval/.gitkeep
+!data/beam/.gitkeep

@@ -1,0 +1,5 @@
+{"id":"mem-001","text":"The user is building Mneno, an explainable memory runtime for long-running AI systems.","status":"active","created_at":"2026-05-28T09:00:00Z","metadata":{"topic":"project","source":"user"}}
+{"id":"mem-002","text":"The current preferred Python version for Mneno Bench is Python 3.11.","status":"active","created_at":"2026-06-06T10:00:00Z","metadata":{"topic":"runtime","source":"user"}}
+{"id":"mem-003","text":"The user previously preferred Python 3.9 for the Mneno evaluation tools.","status":"superseded","superseded_by":"mem-002","created_at":"2025-11-02T14:30:00Z","metadata":{"topic":"runtime","source":"user"}}
+{"id":"mem-004","text":"The current task is to create a clean runnable repository skeleton for Mneno Bench before implementing full benchmarks.","status":"active","created_at":"2026-06-07T08:00:00Z","metadata":{"topic":"task","source":"user"}}
+{"id":"mem-005","text":"A grocery reminder says to buy sparkling water and basil after work.","status":"active","created_at":"2026-06-01T17:45:00Z","metadata":{"topic":"noise","source":"user"}}
