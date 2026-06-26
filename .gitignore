@@ -24,6 +24,7 @@ logs/
 results/mneno/*.json
 results/mneno/exports/*.json
 results/mneno/traces/*.json
+results/mneno/failures/
 results/baselines/*.json
 results/reports/*.md
 results/locomo/*.json
@@ -31,6 +32,8 @@ results/locomo/*.md
 results/locomo/raw/
 results/locomo/traces/
 results/locomo/judge/
+results/locomo/failures/
+results/locomo/checkpoints/
 vendor/wheels/*.whl
 mneno-*.whl
 data/locomo/*
@@ -52,3 +55,4 @@ data/locomo/processed/*
 !data/locomo/processed/.gitkeep
 !data/longmemeval/.gitkeep
 !data/beam/.gitkeep
+.serena/

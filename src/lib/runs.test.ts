@@ -3,6 +3,8 @@ import { describe, expect, it } from "vitest";
 import {
   parseBenchmarkExport,
   parseBenchmarkRun,
+  parseFailureReport,
+  parseRetrievalDeepDive,
   parseTraceExport,
 } from "./runs";
 
@@ -99,6 +101,104 @@ describe("dashboard result parsing", () => {
         trace: {},
       }),
     ).toThrow("Unsupported");
+  });
+
+  it("parses a local failure report", () => {
+    const report = parseFailureReport({
+      id: "run-failures",
+      benchmark: "locomo",
+      run_id: "run-1",
+      created_at: "2026-06-09T00:00:00Z",
+      failures: [
+        {
+          id: "locomo:q1:mneno:retrieval_failure",
+          benchmark: "locomo",
+          case_id: "q1",
+          provider: "mneno",
+          category: "retrieval_failure",
+          severity: "high",
+          query: "Where?",
+          expected_ids: ["D1:1"],
+          retrieved_ids: [],
+          included_ids: [],
+          excluded_ids: [],
+          forbidden_ids: [],
+          trace_ids: ["trace-1"],
+          reason: "Missing evidence.",
+          evidence: ["missing_expected_ids=D1:1"],
+          suggested_action: "Inspect retrieval.",
+          metadata: {},
+        },
+      ],
+      summary: {
+        total_failures: 1,
+        by_category: { retrieval_failure: 1 },
+        by_provider: { mneno: 1 },
+        by_severity: { high: 1 },
+        top_suggested_actions: ["Inspect retrieval."],
+      },
+      metadata: {},
+    });
+
+    expect(report.summary.totalFailures).toBe(1);
+    expect(report.mnenoOnly.totalFailures).toBe(1);
+    expect(report.baselineOnly.totalFailures).toBe(0);
+    expect(report.byProvider.mneno?.byCategory).toEqual({
+      retrieval_failure: 1,
+    });
+    expect(report.failures[0]).toMatchObject({
+      caseId: "q1",
+      category: "retrieval_failure",
+      traceIds: ["trace-1"],
+      suggestedAction: "Mneno Core: Inspect retrieval.",
+      expectedBehavior: false,
+    });
+  });
+
+  it("infers provider interpretation for older baseline failure reports", () => {
+    const report = parseFailureReport({
+      id: "old-report",
+      benchmark: "suite",
+      run_id: "run-old",
+      created_at: "2026-06-09T00:00:00Z",
+      failures: [
+        {
+          id: "suite:q1:full_context_baseline:conflict_resolution_failure",
+          benchmark: "suite",
+          case_id: "q1",
+          provider: "full_context_baseline",
+          category: "conflict_resolution_failure",
+          severity: "high",
+          query: "What is current?",
+          expected_ids: ["new"],
+          retrieved_ids: ["new", "old"],
+          included_ids: ["new", "old"],
+          excluded_ids: [],
+          forbidden_ids: ["old"],
+          trace_ids: [],
+          reason: "Forbidden memory was included.",
+          evidence: ["used_forbidden_ids=old"],
+          suggested_action: "Inspect conflict handling.",
+          metadata: {},
+        },
+      ],
+      summary: {
+        total_failures: 1,
+        by_category: { conflict_resolution_failure: 1 },
+        by_provider: { full_context_baseline: 1 },
+        by_severity: { high: 1 },
+        top_suggested_actions: ["Inspect conflict handling."],
+      },
+      metadata: {},
+    });
+
+    expect(report.failures[0]).toMatchObject({
+      expectedBehavior: true,
+      interpretation: expect.stringContaining("intentionally includes all memories"),
+      suggestedAction: expect.stringContaining("Comparison evidence:"),
+    });
+    expect(report.baselineOnly.totalFailures).toBe(1);
+    expect(report.mnenoOnly.totalFailures).toBe(0);
   });
 
   it("parses Context Rot Suite category and skipped Mneno summaries", () => {
@@ -227,6 +327,72 @@ describe("dashboard result parsing", () => {
     expect(run.locomo?.systems[0]).toMatchObject({
       name: "mneno",
       status: "skipped",
+    });
+  });
+
+  it("parses compact LOCOMO dashboard projections", () => {
+    const run = parseBenchmarkRun({
+      run_id: "locomo-dashboard",
+      suite: "locomo",
+      status: "completed",
+      started_at: "2026-06-09T12:00:00Z",
+      systems: ["keyword_baseline", "full_context_baseline", "mneno"],
+      results: [],
+      dashboard_case_count: 1986,
+      dashboard_mneno_status: "completed",
+      export_metadata: { locomo: { dataset: {}, systems: {} } },
+    });
+
+    expect(run.cases).toBe(1986);
+    expect(run.mnenoStatus).toBe("completed");
+  });
+
+  it("parses retrieval deep-dive dashboard projections", () => {
+    const report = parseRetrievalDeepDive({
+      benchmark: "locomo",
+      created_at: "2026-06-09T12:00:00Z",
+      provider: "mneno",
+      total_failures: 12,
+      sampled_failures: [
+        {
+          id: "failure-1",
+          case_id: "conv-1:qa-0001",
+          provider: "mneno",
+          conversation_id: "conv-1",
+          question_type: "factual_recall",
+          category: "factual_recall",
+          question: "Where?",
+          normalized_question: "where",
+          expected_evidence: [{ evidence_id: "D1:1", text: "There." }],
+          retrieved_candidates: [],
+          context_package: { included_memories: [], excluded_memories: [] },
+          trace: { trace_ids: ["trace-1"] },
+          root_cause: "ranking_failure",
+          explanation: "Evidence was not selected.",
+        },
+      ],
+      root_causes: { ranking_failure: { count: 1, percentage: 100 } },
+      statistics: {
+        sample_size: 1,
+        expected_evidence_count: 1,
+        retrieved_expected_count: 0,
+        candidate_expected_count: 1,
+        retrieval_recall: 0,
+        candidate_coverage: 1,
+        failures_by_root_cause: {},
+        failures_by_conversation: {},
+        failures_by_question_type: {},
+        failures_by_session: {},
+        failures_by_category: {},
+      },
+    });
+
+    expect(report.totalFailures).toBe(12);
+    expect(report.rootCauses.ranking_failure?.percentage).toBe(100);
+    expect(report.sampledFailures[0]).toMatchObject({
+      caseId: "conv-1:qa-0001",
+      rootCause: "ranking_failure",
+      traceIds: ["trace-1"],
     });
   });
 });

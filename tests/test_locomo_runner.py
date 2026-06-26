@@ -1,5 +1,6 @@
 import json
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 from benchmarks.common.schema import (
@@ -10,6 +11,7 @@ from benchmarks.common.schema import (
 from benchmarks.locomo.config import LOCOMOEvaluationConfig
 from benchmarks.locomo.run import (
     _CaseProgress,
+    _EnterStatusPrinter,
     _context_ids,
     _extract_ids,
     _format_duration,
@@ -421,6 +423,28 @@ def test_case_progress_reports_case_level_milestones(monkeypatch: Any) -> None:
         progress.advance()
 
     assert completed == [1, 10, 20, 25]
+
+
+def test_enter_status_printer_reports_current_progress(monkeypatch: Any) -> None:
+    reported = Event()
+    lines = iter(["\n", ""])
+
+    class FakeTTY:
+        def isatty(self) -> bool:
+            return True
+
+        def readline(self) -> str:
+            return next(lines, "")
+
+    progress = _CaseProgress(total=5, started_at=0.0, initial_completed=2)
+    monkeypatch.setattr("benchmarks.locomo.run.sys.stdin", FakeTTY())
+    monkeypatch.setattr(progress, "report_now", reported.set)
+
+    printer = _EnterStatusPrinter(progress)
+    printer.start()
+
+    assert reported.wait(timeout=1.0)
+    printer.stop()
 
 
 def test_result_id_extraction_preserves_legacy_shapes() -> None:

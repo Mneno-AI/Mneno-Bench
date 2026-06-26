@@ -37,10 +37,15 @@ def test_demo_writes_json_and_report_without_mneno(tmp_path: Path) -> None:
     )
     assert (tmp_path / "mneno" / "context_rot_suite_latest.json").exists()
     assert (tmp_path / "reports" / "context_rot_suite_latest.md").exists()
+    assert (
+        tmp_path / "mneno" / "failures" / "context_rot_suite_failures_latest.json"
+    ).exists()
+    assert (tmp_path / "reports" / "context_rot_suite_failures_latest.md").exists()
     summary = run.export_metadata["context_rot_suite"]
     assert summary["systems"]["mneno"]["status"] == "skipped"
     assert summary["systems"]["mneno"]["context_rot_score"] is None
     assert summary["systems"]["full_context_baseline"]["context_rot_score"] is not None
+    assert summary["failure_analysis"]["failure_count"] > 0
 
 
 def test_suite_summary_is_deterministic_when_run_metadata_is_ignored(
@@ -315,7 +320,9 @@ class SmallBudgetContextAdapter(FullMnenoAdapter):
         budget = kwargs["budget"]
         client = kwargs["client"]
         expected = kwargs["expected_memory_ids"]
-        if expected and all(str(memory_id).startswith("internal-cb-") for memory_id in expected):
+        if expected and all(
+            str(memory_id).startswith("internal-cb-") for memory_id in expected
+        ):
             self.context_budgets.append(budget)
             session_memories = [
                 memory

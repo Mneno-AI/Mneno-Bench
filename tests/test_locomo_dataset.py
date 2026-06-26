@@ -51,6 +51,30 @@ def test_valid_official_dataset_loads(tmp_path: Path) -> None:
     assert dataset.question_count == 1
     assert dataset.conversations[0].questions[0].expected_answers == ["Rome"]
     assert dataset.conversations[0].questions[0].evidence_ids == ["D1:1"]
+    assert dataset.conversations[0].questions[0].metadata["raw_evidence"] == ["D1:1"]
+
+
+def test_evidence_ids_accept_space_separated_and_zero_padded_variants(
+    tmp_path: Path,
+) -> None:
+    sample = _sample()
+    sample["qa"][0]["evidence"] = ["D1:01 D1:2"]
+
+    dataset = load_locomo_dataset(_write(tmp_path, [sample]))
+
+    question = dataset.conversations[0].questions[0]
+    assert question.evidence_ids == ["D1:1", "D1:2"]
+    assert question.metadata["raw_evidence"] == ["D1:01 D1:2"]
+
+
+def test_evidence_normalization_does_not_drop_malformed_text(tmp_path: Path) -> None:
+    sample = _sample()
+    sample["qa"][0]["evidence"] = ["D1:1 unknown"]
+
+    with pytest.raises(
+        LOCOMOValidationError, match="missing dialog IDs: D1:1 unknown"
+    ):
+        load_locomo_dataset(_write(tmp_path, [sample]))
 
 
 def test_malformed_dataset_fails(tmp_path: Path) -> None:

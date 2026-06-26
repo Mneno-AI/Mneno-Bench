@@ -143,6 +143,25 @@ Schema changes must remain explicit and versioned. Prefer additive changes.
   unavailable or skipped.
 - Report context cost alongside retrieval quality.
 
+## Failure Analysis Rules
+
+- Diagnose before fixing.
+- Prefer evidence over intuition.
+- Do not classify unsupported root causes.
+- `unknown` is acceptable when the available artifacts do not support a more
+  specific cause.
+- Benchmark failures should drive general Mneno Core improvements rather than
+  benchmark-specific tuning.
+- Failure analysis must be deterministic and evidence-based.
+- Do not invent root causes; prefer `unknown` over unsupported claims.
+- Preserve trace-linked explanations, decisions, reasons, and trace IDs when
+  available.
+- Missing traces, optional capabilities, datasets, or Mneno installations must
+  not crash failure report generation.
+- Do not optimize Mneno purely to pass synthetic cases.
+- Use external benchmark failures to guide general Core improvements without
+  changing benchmark logic, source annotations, or official labels.
+
 ## Adding a Mneno-Specific Benchmark
 
 1. Add small synthetic fixtures with explicit expected and stale memory IDs.

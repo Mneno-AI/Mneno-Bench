@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 import { Sidebar, type PageKey } from "./components/sidebar";
 import { ComparePage } from "./pages/compare";
 import { DashboardPage } from "./pages/dashboard";
+import { DeepDivePage } from "./pages/deep-dive";
+import { FailuresPage } from "./pages/failures";
 import { LocomoPage } from "./pages/locomo";
 import { MnenoSuitePage } from "./pages/mneno-suite";
 import { RunsPage } from "./pages/runs";
@@ -13,6 +15,8 @@ const validPages: PageKey[] = [
   "compare",
   "mneno-suite",
   "locomo",
+  "failures",
+  "deep-dive",
 ];
 
 function pageFromHash(): PageKey {
@@ -42,14 +46,16 @@ export default function App() {
       <Sidebar activePage={page} onNavigate={navigate} />
       <main
         id="main-content"
-        className="min-w-0 px-4 pb-12 pt-24 sm:px-6 lg:ml-64 lg:px-10 lg:pt-10"
+        className="min-w-0 px-4 pb-12 pt-36 sm:px-6 sm:pt-24 lg:ml-64 lg:px-10 lg:pt-10"
       >
         <div className="mx-auto max-w-7xl">
           {page === "dashboard" && <DashboardPage onNavigate={navigate} />}
           {page === "runs" && <RunsPage />}
           {page === "compare" && <ComparePage />}
-          {page === "mneno-suite" && <MnenoSuitePage />}
-          {page === "locomo" && <LocomoPage />}
+          {page === "mneno-suite" && <MnenoSuitePage onNavigate={navigate} />}
+          {page === "locomo" && <LocomoPage onNavigate={navigate} />}
+          {page === "failures" && <FailuresPage />}
+          {page === "deep-dive" && <DeepDivePage />}
         </div>
       </main>
     </div>

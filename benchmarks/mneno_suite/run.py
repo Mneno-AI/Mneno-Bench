@@ -18,6 +18,11 @@ from benchmarks.common.baselines import (
     random_baseline,
 )
 from benchmarks.common.capabilities import detect_mneno_capabilities
+from benchmarks.common.failure_reports import (
+    write_failure_report_json,
+    write_failure_report_markdown,
+)
+from benchmarks.common.failures import failure_report_summary
 from benchmarks.common.mneno_client import INSTALL_MESSAGE, MnenoAdapter
 from benchmarks.common.schema import (
     BaselineResult,
@@ -51,6 +56,9 @@ from benchmarks.mneno_suite.execution import (
     MnenoRuntime,
     execute_mneno_case,
     initialize_mneno_runtime,
+)
+from benchmarks.mneno_suite.failure_analysis import (
+    analyze_mneno_suite_failures,
 )
 from benchmarks.mneno_suite.scoring import (
     DEFAULT_CONTEXT_ROT_WEIGHTS,
@@ -212,7 +220,7 @@ def run_mneno_context_rot_suite(
 
         run.results.append(
             BenchmarkResult(
-                case=_benchmark_case(case),
+                case=_benchmark_case(case, memory_by_id),
                 baseline_results=baseline_results,
                 mneno_result=mneno_result,
                 metrics=metrics_by_system,
@@ -246,6 +254,12 @@ def run_mneno_context_rot_suite(
 
     report_path = results_dir / "reports" / "context_rot_suite_latest.md"
     result_path = results_dir / "mneno" / "context_rot_suite_latest.json"
+    failure_json_path = (
+        results_dir / "mneno" / "failures" / "context_rot_suite_failures_latest.json"
+    )
+    failure_report_path = (
+        results_dir / "reports" / "context_rot_suite_failures_latest.md"
+    )
     suite_summary["failure_cases"] = failure_cases
     suite_summary["report_path"] = str(report_path)
     suite_summary["result_path"] = str(result_path)
@@ -257,6 +271,15 @@ def run_mneno_context_rot_suite(
     )
     run.status = RunStatus.COMPLETED if not run.errors else RunStatus.FAILED
     run.finished_at = now_iso()
+
+    failure_report = analyze_mneno_suite_failures(run)
+    write_failure_report_json(failure_report, failure_json_path)
+    write_failure_report_markdown(failure_report, failure_report_path)
+    suite_summary["failure_analysis"] = {
+        **failure_report_summary(failure_report),
+        "json_path": str(failure_json_path),
+        "report_path": str(failure_report_path),
+    }
 
     save_json(result_path, run.model_dump(mode="json"))
     _write_report(run, report_path)
@@ -424,7 +447,9 @@ def _metric_results(values: Mapping[str, float | None]) -> list[MetricResult]:
     ]
 
 
-def _benchmark_case(case: MnenoSuiteCase) -> BenchmarkCase:
+def _benchmark_case(
+    case: MnenoSuiteCase, memory_by_id: Mapping[str, Any]
+) -> BenchmarkCase:
     return BenchmarkCase(
         id=case.id,
         query=case.query,
@@ -437,6 +462,11 @@ def _benchmark_case(case: MnenoSuiteCase) -> BenchmarkCase:
             "expected_behavior": case.expected_behavior,
             "budget": case.budget,
             "current_session_id": case.current_session_id,
+            "memory_sessions": {
+                memory_id: memory_by_id[memory_id].session_id
+                for memory_id in case.expected_memory_ids
+                if memory_id in memory_by_id
+            },
             "notes": case.notes,
         },
     )
@@ -551,6 +581,48 @@ def _write_report(run: BenchmarkRun, path: Path) -> None:
     lines.append(f"- Result: `{suite['result_path']}`")
     lines.append(f"- Raw benchmark exports: `{suite['export_directory']}`")
     lines.append(f"- Raw traces: `{suite['trace_directory']}`")
+    failure_analysis = suite.get("failure_analysis", {})
+    lines.extend(["", "## Failure Analysis", ""])
+    lines.append(f"- Failure count: **{failure_analysis.get('failure_count', 0)}**")
+    top_categories = failure_analysis.get("top_categories_overall", {})
+    lines.append(
+        "- Top categories overall: "
+        + (
+            ", ".join(
+                f"{category} ({count})" for category, count in top_categories.items()
+            )
+            or "none"
+        )
+    )
+    lines.append(
+        "- Top categories for Mneno: "
+        + _format_failure_counts(failure_analysis.get("top_categories_mneno", {}))
+    )
+    lines.append(
+        "- Top categories for baselines: "
+        + _format_failure_counts(failure_analysis.get("top_categories_baselines", {}))
+    )
+    actions = failure_analysis.get("mneno_suggested_actions", [])
+    lines.append("- Suggested Mneno Core actions: " + ("; ".join(actions) or "none"))
+    lines.append(
+        "- Baseline interpretation: failures remain visible as comparison evidence; "
+        "Full Context stale-memory inclusion, Random misses, and Keyword lexical or "
+        "session limitations may be expected baseline behavior."
+    )
+    worst_cases = failure_analysis.get("worst_cases", [])
+    lines.append(
+        "- Worst cases: "
+        + (
+            ", ".join(
+                f"{item['case_id']} / {item['provider']} / {item['category']}"
+                for item in worst_cases[:5]
+            )
+            or "none"
+        )
+    )
+    if failure_analysis:
+        lines.append(f"- Failure JSON: `{failure_analysis['json_path']}`")
+        lines.append(f"- Failure report: `{failure_analysis['report_path']}`")
     lines.extend(["", "## Failure Cases", ""])
     if not suite["failure_cases"]:
         lines.append("No expected-memory or forbidden-memory failures were recorded.")
@@ -582,6 +654,12 @@ def _write_report(run: BenchmarkRun, path: Path) -> None:
 
 def _format_score(value: Any) -> str:
     return "unavailable" if value is None else f"{float(value):.4f}"
+
+
+def _format_failure_counts(value: Any) -> str:
+    if not isinstance(value, Mapping) or not value:
+        return "none"
+    return ", ".join(f"{name} ({count})" for name, count in value.items())
 
 
 def _retrieved_ids(result: NormalizedSearchResult) -> list[str]:

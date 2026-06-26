@@ -37,3 +37,16 @@ Validation is intentionally strict. If an upstream release contains malformed
 or unresolved evidence references, the loader reports them explicitly rather
 than silently rewriting or dropping benchmark annotations. Corrections should be
 made by the dataset publisher and retained with clear provenance.
+
+To run diagnostics against an upstream copy that contains unresolved evidence
+references, opt into permissive loading explicitly:
+
+```bash
+python -m benchmarks.locomo.run --mode retrieval_only --k 5 \
+  --allow-malformed-evidence
+```
+
+The run artifact records each unresolved reference under validation warnings.
+Recoverable formatting variants, such as space-separated IDs and zero-padded
+turn numbers, are normalized while their original values remain in question
+metadata as `raw_evidence`.

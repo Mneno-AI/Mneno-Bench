@@ -5,9 +5,18 @@ import {
   History,
   Landmark,
   MemoryStick,
+  ScanSearch,
+  TriangleAlert,
 } from "lucide-react";
 
-export type PageKey = "dashboard" | "runs" | "compare" | "mneno-suite" | "locomo";
+export type PageKey =
+  | "dashboard"
+  | "runs"
+  | "compare"
+  | "mneno-suite"
+  | "locomo"
+  | "failures"
+  | "deep-dive";
 
 interface SidebarProps {
   activePage: PageKey;
@@ -20,14 +29,16 @@ const navigation = [
   { id: "compare" as const, label: "Compare", icon: GitCompareArrows },
   { id: "mneno-suite" as const, label: "Mneno Suite", icon: FlaskConical },
   { id: "locomo" as const, label: "LOCOMO", icon: Landmark },
+  { id: "failures" as const, label: "Failures", icon: TriangleAlert },
+  { id: "deep-dive" as const, label: "Deep Dive", icon: ScanSearch },
 ];
 
 export function Sidebar({ activePage, onNavigate }: SidebarProps) {
   return (
     <>
-      <header className="fixed inset-x-0 top-0 z-40 flex h-16 items-center border-b border-ink-950/10 bg-white px-4 lg:hidden">
+      <header className="fixed inset-x-0 top-0 z-40 flex h-28 flex-col items-stretch justify-center border-b border-ink-950/10 bg-white px-4 sm:h-16 sm:flex-row sm:items-center lg:hidden">
         <Brand />
-        <nav aria-label="Primary" className="ml-auto flex items-center gap-1">
+        <nav aria-label="Primary" className="mt-2 flex gap-1 overflow-x-auto sm:ml-auto sm:mt-0 sm:items-center">
           {navigation.map((item) => {
             const Icon = item.icon;
             return (
@@ -38,7 +49,7 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
                 aria-current={activePage === item.id ? "page" : undefined}
                 title={item.label}
                 onClick={() => onNavigate(item.id)}
-                className={`flex size-11 cursor-pointer items-center justify-center rounded-md transition-colors ${
+                className={`flex size-11 w-full shrink-0 cursor-pointer items-center justify-center rounded-md transition-colors sm:w-11 ${
                   activePage === item.id
                     ? "bg-signal-100 text-signal-700"
                     : "text-ink-600 hover:bg-canvas hover:text-ink-950"
@@ -76,9 +87,9 @@ export function Sidebar({ activePage, onNavigate }: SidebarProps) {
           })}
         </nav>
         <div className="absolute bottom-6 left-4 right-4 border-t border-ink-950/10 pt-4">
-          <p className="font-mono text-xs text-ink-600">STEP 5 / LOCOMO</p>
+          <p className="font-mono text-xs text-ink-600">STEP 8 / DEEP DIVE</p>
           <p className="mt-1 text-xs leading-5 text-ink-600">
-            External dataset optional. Mneno remains optional.
+            Evidence-first retrieval diagnostics.
           </p>
         </div>
       </aside>
@@ -92,9 +103,9 @@ function Brand() {
       <span className="flex size-9 items-center justify-center rounded-md bg-ink-950 text-white">
         <MemoryStick aria-hidden="true" size={20} />
       </span>
-      <div>
+      <div className="hidden sm:block lg:block">
         <p className="text-sm font-semibold leading-4">Mneno Bench</p>
-        <p className="font-mono text-[11px] leading-4 text-ink-600">v0.5 locomo</p>
+        <p className="font-mono text-[11px] leading-4 text-ink-600">v0.8 deep dive</p>
       </div>
     </div>
   );

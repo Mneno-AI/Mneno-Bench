@@ -11,7 +11,7 @@ export function DashboardPage({
       <PageHeader
         eyebrow="Mneno-first evaluation"
         title="Context integrity, measured."
-        description="Step 4 validates Mneno against transparent baselines with capability-aware Core execution, lifecycle evaluation, compaction previews, and trace evidence."
+        description="Step 8 investigates LOCOMO retrieval failures through preserved candidates, scores, context decisions, sessions, budgets, and traces before any Mneno Core changes."
       />
       <Dashboard onNavigate={onNavigate} />
     </>

@@ -5,6 +5,7 @@ from __future__ import annotations
 import multiprocessing
 import os
 import re
+import sys
 import time
 from collections import Counter, defaultdict
 from collections.abc import Mapping
@@ -17,7 +18,7 @@ from concurrent.futures import (
 from dataclasses import dataclass
 from queue import Empty
 from pathlib import Path
-from threading import Lock
+from threading import Event, Lock, Thread
 from typing import Any, Callable
 
 import typer
@@ -133,8 +134,60 @@ class _CaseProgress:
     def advance(self, count: int = 1) -> None:
         with self._lock:
             self.completed = min(self.completed + count, self.total)
-            if _should_report_progress(self.completed, self.total):
-                _report_progress(self.completed, self.total, self.started_at)
+            completed = self.completed
+        if _should_report_progress(completed, self.total):
+            self.report_now()
+
+    def snapshot(self) -> tuple[int, int, float]:
+        with self._lock:
+            return self.completed, self.total, self.started_at
+
+    def report_now(self) -> None:
+        completed, total, started_at = self.snapshot()
+        _report_progress(completed, total, started_at)
+
+
+class _EnterStatusPrinter:
+    """Print current progress whenever the user presses Enter in an interactive TTY."""
+
+    def __init__(self, progress: _CaseProgress) -> None:
+        self.progress = progress
+        self._stop = Event()
+        self._thread: Thread | None = None
+
+    def start(self) -> None:
+        if self._thread is not None or not _stdin_accepts_enter_status():
+            return
+        self._thread = Thread(
+            target=self._listen,
+            name="locomo-enter-status",
+            daemon=True,
+        )
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+
+    def _listen(self) -> None:
+        while not self._stop.is_set():
+            try:
+                line = sys.stdin.readline()
+            except (OSError, ValueError):
+                return
+            if line == "":
+                return
+            if self._stop.is_set():
+                return
+            if line.strip() == "":
+                self.progress.report_now()
+
+
+def _stdin_accepts_enter_status() -> bool:
+    isatty = getattr(sys.stdin, "isatty", None)
+    try:
+        return bool(isatty and isatty())
+    except (OSError, ValueError):
+        return False
 
 
 def run_locomo(
@@ -236,28 +289,40 @@ def run_locomo(
     }
     llm_stats_before = LLMClient.global_stats()
     progress_started_at = time.monotonic()
-    console.print(
-        f"[cyan]LOCOMO:[/cyan] {len(resumed_results)}/{total_cases} cases | "
-        f"mode={config.mode} | phase={config.phase} | "
-        f"workers={effective_workers} ({backend}) | ETA calculating"
-    )
-    outcomes = _execute_conversation_jobs(
-        jobs=executable_jobs,
-        sdk=sdk,
-        mneno_available=mneno_available,
-        results_dir=results_dir,
-        run_id=run.run_id,
-        k=k,
-        config=config,
-        judge=locomo_judge,
-        backend=backend,
-        workers=effective_workers,
-        total_cases=total_cases,
-        progress_started_at=progress_started_at,
+    progress = _CaseProgress(
+        total_cases,
+        progress_started_at,
         initial_completed=len(resumed_results),
-        checkpoint_dir=checkpoint_store.directory,
-        checkpoint_fingerprint=checkpoint_store.fingerprint,
     )
+    console.print(
+        f"[cyan]LOCOMO:[/cyan] {progress.completed}/{total_cases} cases | "
+        f"mode={config.mode} | phase={config.phase} | "
+        f"workers={effective_workers} ({backend}) | ETA calculating | "
+        "press Enter for status"
+    )
+    enter_status = _EnterStatusPrinter(progress)
+    enter_status.start()
+    try:
+        outcomes = _execute_conversation_jobs(
+            jobs=executable_jobs,
+            sdk=sdk,
+            mneno_available=mneno_available,
+            results_dir=results_dir,
+            run_id=run.run_id,
+            k=k,
+            config=config,
+            judge=locomo_judge,
+            backend=backend,
+            workers=effective_workers,
+            total_cases=total_cases,
+            progress_started_at=progress_started_at,
+            initial_completed=len(resumed_results),
+            checkpoint_dir=checkpoint_store.directory,
+            checkpoint_fingerprint=checkpoint_store.fingerprint,
+            progress=progress,
+        )
+    finally:
+        enter_status.stop()
     new_results = [
         result
         for outcome in sorted(outcomes, key=lambda item: item.index)
@@ -459,11 +524,12 @@ def _execute_conversation_jobs(
     initial_completed: int = 0,
     checkpoint_dir: Path | None = None,
     checkpoint_fingerprint: str | None = None,
+    progress: _CaseProgress | None = None,
 ) -> list[_ConversationOutcome]:
     if not jobs:
         return []
     outcomes: list[_ConversationOutcome] = []
-    progress = _CaseProgress(total_cases, progress_started_at, initial_completed)
+    progress = progress or _CaseProgress(total_cases, progress_started_at, initial_completed)
 
     if backend == "serial":
         for index, conversation, questions in jobs:

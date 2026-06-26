@@ -30,6 +30,7 @@ DEFAULT_FILENAMES = (
     "locomo.json",
 )
 SESSION_PATTERN = re.compile(r"^session_(\d+)$")
+DIALOG_ID_PATTERN = re.compile(r"\bD(\d+):(\d+)\b")
 
 
 def load_locomo_dataset(
@@ -200,6 +201,7 @@ def _parse_official_question(
         evidence_ids=evidence_ids,
         metadata={
             "answer_available": bool(answers),
+            "raw_evidence": evidence,
             **{
                 key: item
                 for key, item in value.items()
@@ -229,7 +231,15 @@ def _normalize_evidence_ids(value: Any) -> list[str]:
     for item in value:
         if not item:
             continue
-        for part in re.split(r"[;,]", str(item)):
+        text = str(item)
+        matches = list(DIALOG_ID_PATTERN.finditer(text))
+        unmatched = DIALOG_ID_PATTERN.sub("", text)
+        if matches and not re.sub(r"[\s,;()\[\]]+", "", unmatched):
+            ids.extend(
+                f"D{int(match.group(1))}:{int(match.group(2))}" for match in matches
+            )
+            continue
+        for part in re.split(r"[;,]", text):
             cleaned = part.strip().replace("(", "").replace(")", "")
             if cleaned:
                 ids.append(cleaned)

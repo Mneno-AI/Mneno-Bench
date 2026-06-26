@@ -5,6 +5,10 @@ import type {
   ContextRotCategorySummary,
   ContextRotSummary,
   ContextRotSystemSummary,
+  FailureCase,
+  FailureCategory,
+  FailureReport,
+  FailureSeverity,
   LocomoSummary,
   LocomoSystemSummary,
   MnenoCaseDecisionSummary,
@@ -12,6 +16,10 @@ import type {
   MetricResult,
   MnenoBenchmarkExport,
   MnenoTraceExport,
+  RetrievalDeepDive,
+  RetrievalFailureInspection,
+  RetrievalRootCause,
+  RootCauseSummary,
   RunStatus,
   TraceSummary,
 } from "./schema";
@@ -77,10 +85,29 @@ const mnenoResultModules = import.meta.glob("../../results/mneno/*.json", {
   import: "default",
 }) as Record<string, unknown>;
 
-const locomoResultModules = import.meta.glob("../../results/locomo/*.json", {
+const locomoResultModules = import.meta.glob("../../results/locomo/dashboard/runs/*.json", {
   eager: true,
   import: "default",
 }) as Record<string, unknown>;
+
+const failureReportModules = {
+  ...(import.meta.glob("../../results/mneno/failures/*.json", {
+    eager: true,
+    import: "default",
+  }) as Record<string, unknown>),
+  ...(import.meta.glob("../../results/locomo/dashboard/failures/*.json", {
+    eager: true,
+    import: "default",
+  }) as Record<string, unknown>),
+};
+
+const retrievalDeepDiveModules = import.meta.glob(
+  "../../results/locomo/dashboard/deep_dive/*.json",
+  {
+    eager: true,
+    import: "default",
+  },
+) as Record<string, unknown>;
 
 const reportModules = {
   ...(import.meta.glob("../../results/reports/*.md", {
@@ -129,6 +156,9 @@ export function parseBenchmarkRun(value: unknown): BenchmarkRun {
     .map((result) => asObject(result?.mneno_result))
     .filter((result): result is JsonObject => result !== null);
   const mnenoStatus =
+    (typeof raw.dashboard_mneno_status === "string"
+      ? raw.dashboard_mneno_status
+      : undefined) ??
     mnenoResults.find((result) => result.status === "failed")?.status ??
     mnenoResults.find((result) => result.status === "completed")?.status ??
     mnenoResults[0]?.status ??
@@ -159,7 +189,10 @@ export function parseBenchmarkRun(value: unknown): BenchmarkRun {
     startedAt: typeof raw.started_at === "string" ? raw.started_at : "Unknown",
     status: parseStatus(raw.status),
     systems: asArray(raw.systems).map(String),
-    cases: results.length,
+    cases:
+      typeof raw.dashboard_case_count === "number"
+        ? raw.dashboard_case_count
+        : results.length,
     source: raw.suite === "locomo" ? "external" : "synthetic",
     mnenoStatus: parseStatus(mnenoStatus),
     metrics,
@@ -186,6 +219,113 @@ export function parseBenchmarkExport(value: unknown): MnenoBenchmarkExport {
   return value;
 }
 
+export function parseFailureReport(value: unknown): FailureReport {
+  const raw = asObject(value);
+  const summary = asObject(raw?.summary);
+  if (
+    !raw ||
+    !summary ||
+    typeof raw.id !== "string" ||
+    typeof raw.benchmark !== "string" ||
+    typeof raw.run_id !== "string"
+  ) {
+    throw new Error("Invalid failure report.");
+  }
+  const failures = asArray(raw.failures)
+    .map(parseFailureCase)
+    .filter((failure): failure is FailureCase => failure !== null);
+  const globalSummary = parseRootCauseSummary(summary, failures);
+  const rawByProvider = asObject(raw.by_provider);
+  const providers = Array.from(new Set(failures.map((failure) => failure.provider)));
+  const byProvider = Object.fromEntries(
+    providers.map((provider) => [
+      provider,
+      parseRootCauseSummary(
+        asObject(rawByProvider?.[provider]),
+        failures.filter((failure) => failure.provider === provider),
+      ),
+    ]),
+  );
+  return {
+    id: raw.id,
+    benchmark: raw.benchmark,
+    runId: raw.run_id,
+    createdAt: typeof raw.created_at === "string" ? raw.created_at : "Unknown",
+    failures,
+    summary: globalSummary,
+    byProvider,
+    mnenoOnly: parseRootCauseSummary(
+      asObject(raw.mneno_only),
+      failures.filter((failure) => failure.provider === "mneno"),
+    ),
+    baselineOnly: parseRootCauseSummary(
+      asObject(raw.baseline_only),
+      failures.filter((failure) => isBaselineProvider(failure.provider)),
+    ),
+    metadata: asObject(raw.metadata) ?? {},
+  };
+}
+
+export function parseRetrievalDeepDive(value: unknown): RetrievalDeepDive {
+  const raw = asObject(value);
+  const statistics = asObject(raw?.statistics);
+  if (
+    !raw ||
+    !statistics ||
+    typeof raw.benchmark !== "string" ||
+    typeof raw.provider !== "string"
+  ) {
+    throw new Error("Invalid retrieval deep dive.");
+  }
+  return {
+    benchmark: raw.benchmark,
+    createdAt: typeof raw.created_at === "string" ? raw.created_at : "Unknown",
+    provider: raw.provider,
+    totalFailures: numberValue(raw.total_failures),
+    sampledFailures: asArray(raw.sampled_failures)
+      .map(parseRetrievalInspection)
+      .filter((item): item is RetrievalFailureInspection => item !== null),
+    rootCauses: countPercentageRecord(raw.root_causes),
+    statistics: {
+      sampleSize: numberValue(statistics.sample_size),
+      expectedEvidenceCount: numberValue(statistics.expected_evidence_count),
+      retrievedExpectedCount: numberValue(statistics.retrieved_expected_count),
+      candidateExpectedCount: numberValue(statistics.candidate_expected_count),
+      retrievalRecall: nullableNumber(statistics.retrieval_recall),
+      candidateCoverage: nullableNumber(statistics.candidate_coverage),
+      failuresByRootCause: countPercentageRecord(statistics.failures_by_root_cause),
+      failuresByConversation: countPercentageRecord(statistics.failures_by_conversation),
+      failuresByQuestionType: countPercentageRecord(statistics.failures_by_question_type),
+      failuresBySession: countPercentageRecord(statistics.failures_by_session),
+      failuresByCategory: countPercentageRecord(statistics.failures_by_category),
+    },
+    recommendations: asArray(raw.recommendations)
+      .map((value) => {
+        const item = asObject(value);
+        if (!item || typeof item.title !== "string") return null;
+        return {
+          title: item.title,
+          evidence: asArray(item.evidence).map(String),
+          expectedImpact:
+            typeof item.expected_impact === "string" ? item.expected_impact : "",
+          confidence: typeof item.confidence === "string" ? item.confidence : "unknown",
+          suggestedCoreArea:
+            typeof item.suggested_core_area === "string"
+              ? item.suggested_core_area
+              : "Unknown",
+        };
+      })
+      .filter((item): item is RetrievalDeepDive["recommendations"][number] => item !== null),
+    topFailureCases: asArray(raw.top_failure_cases)
+      .map(parseRetrievalInspection)
+      .filter((item): item is RetrievalFailureInspection => item !== null),
+    recommendedCorePriorities: asArray(raw.recommended_core_priorities).map(String),
+    runId: typeof raw.run_id === "string" ? raw.run_id : null,
+    deterministicSeed: numberValue(raw.deterministic_seed),
+    metadata: asObject(raw.metadata) ?? {},
+  };
+}
+
 export const sampleRuns: BenchmarkRun[] = Object.values(resultModules)
   .map((value) => {
     try {
@@ -202,6 +342,34 @@ if (sampleRuns.length === 0) {
 }
 
 export const latestRun = sampleRuns[0];
+
+export const failureReports: FailureReport[] = Object.values(failureReportModules)
+  .map((value) => {
+    try {
+      return parseFailureReport(value);
+    } catch {
+      return null;
+    }
+  })
+  .filter((report): report is FailureReport => report !== null)
+  .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+export const latestFailureReport = failureReports[0];
+
+export const retrievalDeepDives: RetrievalDeepDive[] = Object.values(
+  retrievalDeepDiveModules,
+)
+  .map((value) => {
+    try {
+      return parseRetrievalDeepDive(value);
+    } catch {
+      return null;
+    }
+  })
+  .filter((report): report is RetrievalDeepDive => report !== null)
+  .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+
+export const latestRetrievalDeepDive = retrievalDeepDives[0];
 
 export const suites: BenchmarkSuite[] = [
   {
@@ -248,6 +416,243 @@ function parseMetric(value: unknown): MetricResult | null {
   };
 }
 
+function parseFailureCase(value: unknown): FailureCase | null {
+  const raw = asObject(value);
+  if (
+    !raw ||
+    typeof raw.id !== "string" ||
+    typeof raw.case_id !== "string" ||
+    typeof raw.provider !== "string" ||
+    !isFailureCategory(raw.category) ||
+    !isFailureSeverity(raw.severity)
+  ) {
+    return null;
+  }
+  const provider = raw.provider;
+  const category = raw.category;
+  const interpretation =
+    typeof raw.interpretation === "string"
+      ? raw.interpretation
+      : providerInterpretation(provider, category);
+  const expectedBehavior =
+    raw.expected_behavior === true || expectedBaselineBehavior(provider, category);
+  const rawAction =
+    typeof raw.suggested_action === "string"
+      ? raw.suggested_action
+      : "Collect more evidence.";
+  return {
+    id: raw.id,
+    benchmark: typeof raw.benchmark === "string" ? raw.benchmark : "unknown",
+    caseId: raw.case_id,
+    provider,
+    category,
+    severity: raw.severity,
+    query: typeof raw.query === "string" ? raw.query : "",
+    expectedIds: asArray(raw.expected_ids).map(String),
+    retrievedIds: asArray(raw.retrieved_ids).map(String),
+    includedIds: asArray(raw.included_ids).map(String),
+    excludedIds: asArray(raw.excluded_ids).map(String),
+    forbiddenIds: asArray(raw.forbidden_ids).map(String),
+    traceIds: asArray(raw.trace_ids).map(String),
+    reason: typeof raw.reason === "string" ? raw.reason : "No reason recorded.",
+    evidence: asArray(raw.evidence).map(String),
+    suggestedAction: providerAction(provider, rawAction, interpretation),
+    expectedBehavior,
+    interpretation,
+    metadata: asObject(raw.metadata) ?? {},
+  };
+}
+
+function parseRetrievalInspection(
+  value: unknown,
+): RetrievalFailureInspection | null {
+  const raw = asObject(value);
+  if (
+    !raw ||
+    typeof raw.id !== "string" ||
+    typeof raw.case_id !== "string" ||
+    typeof raw.provider !== "string" ||
+    !isRetrievalRootCause(raw.root_cause)
+  ) {
+    return null;
+  }
+  const context = asObject(raw.context_package) ?? {};
+  return {
+    id: raw.id,
+    caseId: raw.case_id,
+    provider: raw.provider,
+    conversationId:
+      typeof raw.conversation_id === "string" ? raw.conversation_id : "unknown",
+    questionType:
+      typeof raw.question_type === "string" ? raw.question_type : "unknown",
+    category: typeof raw.category === "string" ? raw.category : "unknown",
+    sessions: asArray(raw.sessions).map(String),
+    question: typeof raw.question === "string" ? raw.question : "",
+    normalizedQuestion:
+      typeof raw.normalized_question === "string" ? raw.normalized_question : "",
+    expectedEvidence: asArray(raw.expected_evidence).map((value) => {
+      const item = asObject(value) ?? {};
+      return {
+        evidenceId: String(item.evidence_id ?? "unknown"),
+        text: typeof item.text === "string" ? item.text : null,
+        sessionId: typeof item.session_id === "string" ? item.session_id : null,
+        coreMemoryId:
+          typeof item.core_memory_id === "string" ? item.core_memory_id : null,
+      };
+    }),
+    retrievedCandidates: asArray(raw.retrieved_candidates).map((value) => {
+      const item = asObject(value) ?? {};
+      return {
+        id: String(item.id ?? "unknown"),
+        coreMemoryId: String(item.core_memory_id ?? "unknown"),
+        text: typeof item.text === "string" ? item.text : null,
+        score: nullableNumber(item.score),
+        rank: nullableNumber(item.rank),
+        selected: item.selected === true,
+        reasons: asArray(item.reasons).map(String),
+      };
+    }),
+    includedIds: asArray(context.included_memories).map(
+      (value) => String(asObject(value)?.id ?? "unknown"),
+    ),
+    excludedExpectedIds: asArray(context.excluded_memories).map(
+      (value) => String(asObject(value)?.id ?? "unknown"),
+    ),
+    traceIds: asArray(asObject(raw.trace)?.trace_ids).map(String),
+    rootCause: raw.root_cause,
+    explanation:
+      typeof raw.explanation === "string" ? raw.explanation : "No explanation recorded.",
+    classificationEvidence: asArray(raw.classification_evidence).map(String),
+  };
+}
+
+function countPercentageRecord(value: unknown) {
+  const raw = asObject(value) ?? {};
+  return Object.fromEntries(
+    Object.entries(raw).map(([key, item]) => {
+      const summary = asObject(item) ?? {};
+      return [
+        key,
+        {
+          count: numberValue(summary.count),
+          percentage: numberValue(summary.percentage),
+        },
+      ];
+    }),
+  );
+}
+
+function isRetrievalRootCause(value: unknown): value is RetrievalRootCause {
+  return [
+    "evidence_not_indexed",
+    "candidate_generation_failure",
+    "query_normalization_failure",
+    "lexical_mismatch",
+    "semantic_retrieval_failure",
+    "ranking_failure",
+    "budget_exclusion",
+    "session_bias_failure",
+    "lifecycle_filter_failure",
+    "unknown",
+  ].includes(String(value));
+}
+
+function parseRootCauseSummary(
+  value: JsonObject | null,
+  failures: FailureCase[],
+): RootCauseSummary {
+  if (!value) {
+    return summarizeFailures(failures);
+  }
+  return {
+    totalFailures: numberValue(value.total_failures),
+    byCategory: numberRecord(value.by_category),
+    byProvider: numberRecord(value.by_provider),
+    bySeverity: numberRecord(value.by_severity),
+    topSuggestedActions: asArray(value.top_suggested_actions).map(String),
+  };
+}
+
+function summarizeFailures(failures: FailureCase[]): RootCauseSummary {
+  const actionCounts = countStrings(
+    failures.map((failure) => failure.suggestedAction),
+  );
+  return {
+    totalFailures: failures.length,
+    byCategory: countStrings(failures.map((failure) => failure.category)),
+    byProvider: countStrings(failures.map((failure) => failure.provider)),
+    bySeverity: countStrings(failures.map((failure) => failure.severity)),
+    topSuggestedActions: Object.entries(actionCounts)
+      .sort((left, right) => right[1] - left[1] || left[0].localeCompare(right[0]))
+      .slice(0, 5)
+      .map(([action]) => action),
+  };
+}
+
+function countStrings(values: string[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const value of values) {
+    counts[value] = (counts[value] ?? 0) + 1;
+  }
+  return counts;
+}
+
+function isBaselineProvider(provider: string): boolean {
+  return provider.endsWith("_baseline");
+}
+
+function expectedBaselineBehavior(
+  provider: string,
+  category: FailureCategory,
+): boolean {
+  if (provider === "full_context_baseline") {
+    return category === "conflict_resolution_failure";
+  }
+  if (provider === "random_baseline") {
+    return category === "retrieval_failure";
+  }
+  if (provider === "keyword_baseline") {
+    return ["retrieval_failure", "session_continuity_failure"].includes(category);
+  }
+  return false;
+}
+
+function providerInterpretation(
+  provider: string,
+  category: FailureCategory,
+): string | null {
+  if (provider === "full_context_baseline") {
+    return category === "conflict_resolution_failure"
+      ? "Full Context intentionally includes all memories, so stale or forbidden-memory use is expected comparison behavior, not by itself a product bug."
+      : "Full Context failures quantify the risk and cost of including everything.";
+  }
+  if (provider === "random_baseline") {
+    return "Random retrieval failures are expected baseline behavior and provide a lower-bound comparison.";
+  }
+  if (provider === "keyword_baseline") {
+    return "Keyword retrieval and session failures reflect known lexical and session-awareness limitations of this comparison baseline.";
+  }
+  if (provider === "mneno") {
+    return "This failure is evidence for investigating Mneno Core behavior.";
+  }
+  return null;
+}
+
+function providerAction(
+  provider: string,
+  action: string,
+  interpretation: string | null,
+): string {
+  if (action.startsWith("Mneno Core:") || action.startsWith("Comparison evidence:")) {
+    return action;
+  }
+  if (provider === "mneno") return `Mneno Core: ${action}`;
+  if (isBaselineProvider(provider)) {
+    return `Comparison evidence: ${interpretation ?? action}`;
+  }
+  return action;
+}
+
 function parseContextRotSummary(value: JsonObject | null): ContextRotSummary | undefined {
   if (!value) {
     return undefined;
@@ -261,6 +666,7 @@ function parseContextRotSummary(value: JsonObject | null): ContextRotSummary | u
     .map(([name, system]) => parseContextRotSystem(name, asObject(system)))
     .filter((system): system is ContextRotSystemSummary => system !== null);
   const reportPath = typeof value.report_path === "string" ? value.report_path : "";
+  const failureAnalysis = asObject(value.failure_analysis);
   const reportSource = Object.entries(reportModules).find(([path]) =>
     path.endsWith("/context_rot_suite_latest.md"),
   )?.[1];
@@ -276,7 +682,10 @@ function parseContextRotSummary(value: JsonObject | null): ContextRotSummary | u
       typeof value.trace_directory === "string" ? value.trace_directory : "",
     exportDirectory:
       typeof value.export_directory === "string" ? value.export_directory : "",
-    failureCount: asArray(value.failure_cases).length,
+    failureCount:
+      typeof failureAnalysis?.failure_count === "number"
+        ? failureAnalysis.failure_count
+        : asArray(value.failure_cases).length,
   };
 }
 
@@ -288,6 +697,10 @@ function parseLocomoSummary(value: JsonObject | null): LocomoSummary | undefined
   const scoring = asObject(value.official_scoring) ?? {};
   const validation = asObject(value.dataset_validation) ?? {};
   const rawSystems = asObject(value.systems) ?? {};
+  const checkpointing = asObject(value.checkpointing);
+  const externalRequests = asObject(value.external_requests);
+  const failureAnalysis = asObject(value.failure_analysis);
+  const retrievalDeepDive = asObject(value.retrieval_deep_dive);
   const reportPath = typeof value.report_path === "string" ? value.report_path : "";
   const reportSource = Object.entries(reportModules).find(([path]) =>
     path.endsWith("/locomo_latest.md"),
@@ -295,6 +708,12 @@ function parseLocomoSummary(value: JsonObject | null): LocomoSummary | undefined
   return {
     datasetStatus:
       typeof value.dataset_status === "string" ? value.dataset_status : "unknown",
+    datasetPath:
+      typeof dataset.source_path === "string"
+        ? dataset.source_path
+        : typeof dataset.raw_path === "string"
+          ? dataset.raw_path
+          : "",
     executionStatus: parseStatus(value.execution_status),
     evaluationMode:
       typeof value.evaluation_mode === "string" ? value.evaluation_mode : "retrieval_only",
@@ -330,6 +749,89 @@ function parseLocomoSummary(value: JsonObject | null): LocomoSummary | undefined
       typeof scoring.reason === "string"
         ? scoring.reason
         : "Official LOCOMO scoring is unavailable.",
+    checkpointing: checkpointing
+      ? {
+          enabled: checkpointing.enabled === true,
+          resumedCases: numberValue(checkpointing.resumed_cases),
+          completedCases: numberValue(checkpointing.completed_cases),
+          failedCases: numberValue(checkpointing.failed_cases),
+          checkpointDir:
+            typeof checkpointing.checkpoint_dir === "string"
+              ? checkpointing.checkpoint_dir
+              : "",
+          fingerprint:
+            typeof checkpointing.fingerprint === "string"
+              ? checkpointing.fingerprint
+              : null,
+          evaluationFingerprint:
+            typeof checkpointing.evaluation_fingerprint === "string"
+              ? checkpointing.evaluation_fingerprint
+              : null,
+          reuseFailedCheckpoints: checkpointing.reuse_failed_checkpoints === true,
+        }
+      : undefined,
+    externalRequests: externalRequests
+      ? {
+          enabled: true,
+          totalRequests: numberValue(externalRequests.attempts),
+          successes: numberValue(externalRequests.successful_requests),
+          failures: numberValue(externalRequests.failures),
+          retries: numberValue(externalRequests.retries),
+          rateLimited: numberValue(externalRequests.rate_limited_429s),
+          elapsedSeconds: nullableNumber(externalRequests.elapsed_seconds),
+        }
+      : undefined,
+    failureAnalysis: failureAnalysis
+      ? {
+          failureCount: numberValue(failureAnalysis.failure_count),
+          topCategoriesOverall: countRecord(failureAnalysis.top_categories_overall),
+          topCategoriesMneno: countRecord(failureAnalysis.top_categories_mneno),
+          topCategoriesBaselines: countRecord(
+            failureAnalysis.top_categories_baselines,
+          ),
+          mnenoSuggestedActions: asArray(
+            failureAnalysis.mneno_suggested_actions,
+          ).map(String),
+          worstCases: asArray(failureAnalysis.worst_cases)
+            .map((item) => {
+              const raw = asObject(item);
+              if (!raw) return null;
+              return {
+                caseId: String(raw.case_id ?? "unknown"),
+                provider: String(raw.provider ?? "unknown"),
+                category: String(raw.category ?? "unknown"),
+                severity: String(raw.severity ?? "unknown"),
+              };
+            })
+            .filter((item): item is NonNullable<
+              LocomoSummary["failureAnalysis"]
+            >["worstCases"][number] => item !== null),
+          jsonPath:
+            typeof failureAnalysis.json_path === "string"
+              ? failureAnalysis.json_path
+              : null,
+          reportPath:
+            typeof failureAnalysis.report_path === "string"
+              ? failureAnalysis.report_path
+              : null,
+        }
+      : undefined,
+    retrievalDeepDive: retrievalDeepDive
+      ? {
+          sampledFailureCount: numberValue(
+            retrievalDeepDive.sampled_failure_count,
+          ),
+          rootCauses: countRecord(retrievalDeepDive.root_causes),
+          jsonPath:
+            typeof retrievalDeepDive.json_path === "string"
+              ? retrievalDeepDive.json_path
+              : null,
+          reportPath:
+            typeof retrievalDeepDive.report_path === "string"
+              ? retrievalDeepDive.report_path
+              : null,
+        }
+      : undefined,
   };
 }
 
@@ -546,6 +1048,27 @@ function parseStatus(value: unknown): RunStatus {
     : "failed";
 }
 
+function isFailureCategory(value: unknown): value is FailureCategory {
+  return [
+    "retrieval_failure",
+    "ranking_failure",
+    "context_budget_failure",
+    "lifecycle_filter_failure",
+    "session_continuity_failure",
+    "conflict_resolution_failure",
+    "compaction_failure",
+    "answer_generation_failure",
+    "judge_failure",
+    "dataset_issue",
+    "skipped",
+    "unknown",
+  ].includes(String(value));
+}
+
+function isFailureSeverity(value: unknown): value is FailureSeverity {
+  return ["low", "medium", "high", "critical"].includes(String(value));
+}
+
 function asObject(value: unknown): JsonObject | null {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? (value as JsonObject)
@@ -573,6 +1096,24 @@ function numberRecord(value: unknown): Record<string, number> {
     Object.entries(object).filter(
       (entry): entry is [string, number] => typeof entry[1] === "number",
     ),
+  );
+}
+
+function countRecord(value: unknown): Record<string, number> {
+  const object = asObject(value);
+  if (!object) {
+    return {};
+  }
+  return Object.fromEntries(
+    Object.entries(object)
+      .map(([key, raw]) => {
+        if (typeof raw === "number") return [key, raw] as const;
+        const summary = asObject(raw);
+        return typeof summary?.count === "number"
+          ? ([key, summary.count] as const)
+          : null;
+      })
+      .filter((entry): entry is readonly [string, number] => entry !== null),
   );
 }
 
