@@ -1,6 +1,6 @@
-import { ArrowRight, Database, FlaskConical, ShieldCheck } from "lucide-react";
+import { ArrowRight, Database, FlaskConical, ShieldCheck, TriangleAlert } from "lucide-react";
 
-import { latestRun, suites } from "../lib/runs";
+import { failureReports, latestRun, suites } from "../lib/runs";
 import type { PageKey } from "./sidebar";
 import { MetricCard } from "./metric-card";
 
@@ -11,7 +11,7 @@ export function Dashboard({
 }) {
   return (
     <>
-      <section className="grid gap-4 md:grid-cols-3">
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <SummaryItem
           icon={FlaskConical}
           label="Primary suite"
@@ -19,6 +19,29 @@ export function Dashboard({
         />
         <SummaryItem icon={Database} label="Result store" value="Local JSON" />
         <SummaryItem icon={ShieldCheck} label="Credentials" value="Not required" />
+        <SummaryItem
+          icon={TriangleAlert}
+          label="Failure reports"
+          value={String(failureReports.length)}
+        />
+      </section>
+
+      <section className="mt-8 flex flex-col gap-4 rounded-lg border border-ink-950/10 bg-white p-5 shadow-panel sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="font-mono text-xs uppercase text-signal-700">Retrieval deep dive</p>
+          <h2 className="mt-1 text-xl font-semibold">Trace why LOCOMO evidence was missed</h2>
+          <p className="mt-2 text-sm text-ink-600">
+            Review candidate coverage, ranking, session bias, budgets, unknowns, and evidence-backed priorities.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => onNavigate("deep-dive")}
+          className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-md bg-ink-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-ink-800"
+        >
+          View deep dive
+          <ArrowRight aria-hidden="true" size={17} />
+        </button>
       </section>
 
       <section className="mt-8">
@@ -27,7 +50,7 @@ export function Dashboard({
             <p className="font-mono text-xs uppercase text-signal-700">
               Synthetic preview
             </p>
-            <h2 className="mt-1 text-xl font-semibold">Mneno-specific metrics</h2>
+              <h2 className="mt-1 text-xl font-semibold">Benchmark metrics</h2>
           </div>
           <button
             type="button"

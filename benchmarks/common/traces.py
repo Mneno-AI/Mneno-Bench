@@ -41,10 +41,11 @@ class TraceLoader:
         return self._summarize(export.trace)
 
     def load_trace_directory(self, directory: str | Path) -> list[TraceSummary]:
-        return [
-            self.load_trace_export(path)
-            for path in sorted(Path(directory).glob("*.json"))
+        paths = [
+            *Path(directory).glob("*.json"),
+            *Path(directory).glob("*.json.gz"),
         ]
+        return [self.load_trace_export(path) for path in sorted(paths)]
 
     def _summarize(self, trace: dict[str, Any]) -> TraceSummary:
         operations = _items(trace, "operations")
@@ -55,18 +56,45 @@ class TraceLoader:
         if not decisions:
             decisions = [event for event in events if _is_decision_event(event)]
         trace_id = trace.get("id") or trace.get("trace_id")
+        identity_map = _event_identity_map(events)
+        retrieved_ids = _mapped_string_list(
+            trace, "retrieved_memory_ids", identity_map
+        )
+        selected_ids = _unique_strings(
+            [
+                *_mapped_string_list(trace, "selected_memory_ids", identity_map),
+                *_event_ids(events, "final_results_selected", identity_map),
+                *_event_ids(events, "retrieval_candidate_decision", identity_map),
+            ]
+        )
+        included_ids = _unique_strings(
+            [
+                *_mapped_string_list(trace, "included_memory_ids", identity_map),
+                *_event_ids(events, "context_item_included", identity_map),
+            ]
+        )
+        excluded_ids = _unique_strings(
+            [
+                *_mapped_string_list(trace, "excluded_memory_ids", identity_map),
+                *_event_ids(events, "context_item_excluded", identity_map),
+            ]
+        )
         return TraceSummary(
             trace_id=str(trace_id) if trace_id is not None else None,
             operation_count=len(operations),
             event_count=len(events),
             decision_count=len(decisions),
             duration_ms=_duration_ms(trace),
-            retrieved_memory_ids=_string_list(trace, "retrieved_memory_ids"),
-            selected_memory_ids=_string_list(trace, "selected_memory_ids"),
-            suppressed_memory_ids=_string_list(trace, "suppressed_memory_ids"),
-            conflict_resolutions=_string_list(trace, "conflict_resolutions"),
-            lifecycle_events=_string_list(trace, "lifecycle_events"),
-            explanations=_string_list(trace, "explanations"),
+            retrieved_memory_ids=_unique_strings([*retrieved_ids, *selected_ids]),
+            selected_memory_ids=selected_ids,
+            included_memory_ids=included_ids,
+            excluded_memory_ids=excluded_ids,
+            suppressed_memory_ids=_mapped_string_list(
+                trace, "suppressed_memory_ids", identity_map
+            ),
+            conflict_resolutions=_plain_string_list(trace, "conflict_resolutions"),
+            lifecycle_events=_plain_string_list(trace, "lifecycle_events"),
+            explanations=_plain_string_list(trace, "explanations"),
             explainability_coverage=_optional_float(
                 trace.get("explainability_coverage")
             ),
@@ -89,8 +117,71 @@ def _is_decision_event(value: Any) -> bool:
     )
 
 
-def _string_list(trace: dict[str, Any], key: str) -> list[str]:
+def _mapped_string_list(
+    trace: dict[str, Any], key: str, identity_map: dict[str, str]
+) -> list[str]:
+    return [_map_id(item, identity_map) for item in _items(trace, key)]
+
+
+def _plain_string_list(trace: dict[str, Any], key: str) -> list[str]:
     return [str(item) for item in _items(trace, key)]
+
+
+def _event_identity_map(events: list[Any]) -> dict[str, str]:
+    identities: dict[str, str] = {}
+    for event in events:
+        if not isinstance(event, dict):
+            continue
+        data = event.get("data")
+        if not isinstance(data, dict):
+            continue
+        internal_id = (
+            data.get("internal_memory_id")
+            or data.get("memory_id")
+            or event.get("memory_id")
+        )
+        dataset_id = data.get("dataset_memory_id")
+        if internal_id is not None and dataset_id is not None:
+            identities[str(internal_id)] = str(dataset_id)
+    return identities
+
+
+def _event_ids(
+    events: list[Any], event_type: str, identity_map: dict[str, str]
+) -> list[str]:
+    ids: list[str] = []
+    for event in events:
+        if not isinstance(event, dict) or event.get("event_type") != event_type:
+            continue
+        raw_data = event.get("data")
+        data: dict[str, Any] = raw_data if isinstance(raw_data, dict) else {}
+        if event_type == "final_results_selected":
+            ids.extend(
+                _map_id(item, identity_map)
+                for item in data.get("memory_ids", [])
+                if item is not None
+            )
+            continue
+        if event_type == "retrieval_candidate_decision" and not data.get("included"):
+            continue
+        memory_id = (
+            data.get("dataset_memory_id")
+            or data.get("internal_memory_id")
+            or data.get("memory_id")
+            or event.get("memory_id")
+        )
+        if memory_id is not None:
+            ids.append(_map_id(memory_id, identity_map))
+    return _unique_strings(ids)
+
+
+def _map_id(value: Any, identity_map: dict[str, str]) -> str:
+    item = str(value)
+    return identity_map.get(item, item)
+
+
+def _unique_strings(values: list[str]) -> list[str]:
+    return list(dict.fromkeys(values))
 
 
 def _optional_string(value: Any) -> str | None:

@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 
 import { StatusBadge } from "../components/runs-table";
+import type { PageKey } from "../components/sidebar";
 import { latestRun } from "../lib/runs";
 import type { BenchmarkRun, ContextRotSystemSummary } from "../lib/schema";
 import { PageHeader } from "./dashboard";
@@ -20,7 +21,13 @@ const systemLabels: Record<string, string> = {
   mneno: "Mneno",
 };
 
-export function MnenoSuitePage({ run = latestRun }: { run?: BenchmarkRun }) {
+export function MnenoSuitePage({
+  run = latestRun,
+  onNavigate,
+}: {
+  run?: BenchmarkRun;
+  onNavigate?: (page: PageKey) => void;
+}) {
   const summary = run.contextRot;
   const execution = run.mnenoExecution;
   const mneno = summary?.systems.find((system) => system.name === "mneno");
@@ -191,18 +198,29 @@ export function MnenoSuitePage({ run = latestRun }: { run?: BenchmarkRun }) {
                 {summary.failureCount} recorded retrieval failures. Raw traces and exports remain local.
               </p>
             </div>
-            {summary.reportUrl ? (
-              <a
-                className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-ink-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-ink-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-950"
-                href={summary.reportUrl}
-                download="context_rot_suite_latest.md"
-              >
-                <FileText aria-hidden="true" size={17} />
-                Download report
-              </a>
-            ) : (
-              <code className="text-xs text-ink-600">{summary.reportPath}</code>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {onNavigate ? (
+                <button
+                  type="button"
+                  onClick={() => onNavigate("failures")}
+                  className="min-h-11 cursor-pointer rounded-md border border-ink-950/10 px-4 text-sm font-semibold text-ink-800 transition-colors hover:bg-canvas"
+                >
+                  View failures
+                </button>
+              ) : null}
+              {summary.reportUrl ? (
+                <a
+                  className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-ink-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-ink-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ink-950"
+                  href={summary.reportUrl}
+                  download="context_rot_suite_latest.md"
+                >
+                  <FileText aria-hidden="true" size={17} />
+                  Download report
+                </a>
+              ) : (
+                <code className="text-xs text-ink-600">{summary.reportPath}</code>
+              )}
+            </div>
           </section>
 
           {execution?.decisions.length ? (

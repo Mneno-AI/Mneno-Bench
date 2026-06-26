@@ -16,6 +16,7 @@ class RunStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     SKIPPED = "skipped"
+    DATASET_MISSING = "dataset_missing"
 
 
 class BenchmarkCase(BaseModel):
@@ -81,6 +82,8 @@ class TraceSummary(BaseModel):
     duration_ms: float | None = None
     retrieved_memory_ids: list[str] = Field(default_factory=list)
     selected_memory_ids: list[str] = Field(default_factory=list)
+    included_memory_ids: list[str] = Field(default_factory=list)
+    excluded_memory_ids: list[str] = Field(default_factory=list)
     suppressed_memory_ids: list[str] = Field(default_factory=list)
     conflict_resolutions: list[str] = Field(default_factory=list)
     lifecycle_events: list[str] = Field(default_factory=list)

@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import gzip
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -27,20 +29,35 @@ def load_jsonl(path: str | Path) -> list[dict[str, Any]]:
 
 
 def save_json(path: str | Path, value: Any) -> Path:
-    """Serialize a value as readable JSON, creating parent directories."""
+    """Serialize a JSON value atomically, with transparent .gz support."""
 
     destination = Path(path)
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with destination.open("w", encoding="utf-8") as handle:
-        json.dump(value, handle, indent=2, ensure_ascii=True)
-        handle.write("\n")
+    temporary = destination.with_name(f".{destination.name}.{uuid4().hex}.tmp")
+    try:
+        if destination.suffix == ".gz":
+            with gzip.open(temporary, "wt", encoding="utf-8") as handle:
+                json.dump(value, handle, indent=2, ensure_ascii=True)
+                handle.write("\n")
+        else:
+            with temporary.open("w", encoding="utf-8") as handle:
+                json.dump(value, handle, indent=2, ensure_ascii=True)
+                handle.write("\n")
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            temporary.unlink()
     return destination
 
 
 def load_json(path: str | Path) -> Any:
-    """Load a JSON value from disk."""
+    """Load a JSON value from disk, including .json.gz files."""
 
-    with Path(path).open(encoding="utf-8") as handle:
+    source = Path(path)
+    if source.suffix == ".gz":
+        with gzip.open(source, "rt", encoding="utf-8") as handle:
+            return json.load(handle)
+    with source.open(encoding="utf-8") as handle:
         return json.load(handle)
 
 

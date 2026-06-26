@@ -43,6 +43,20 @@ product contract.
 - Keep Mneno-specific metrics explainable through explicit numerators,
   denominators, lifecycle states, sessions, and trace evidence.
 
+## External Benchmark Philosophy
+
+- Never optimize implementation for benchmark scores.
+- Preserve benchmark neutrality.
+- Keep benchmark logic separated from Mneno-specific logic.
+- Do not alter benchmark datasets.
+- Prefer official evaluation methodologies.
+- Missing datasets must never crash the repository.
+- Never call diagnostic metrics official or fabricate official scores.
+- Keep retrieval diagnostics separate from answer-quality evaluation.
+- LLM judges must remain optional and use the shared LiteLLM abstraction.
+- Every judge output must identify its model, provider, and prompt version.
+- Missing judge credentials must skip judging rather than fail the benchmark.
+
 ## Development Setup
 
 Use Python 3.11+ and Node.js 22+.
@@ -128,6 +142,25 @@ Schema changes must remain explicit and versioned. Prefer additive changes.
 - Never convert missing trace data into a zero score when the correct state is
   unavailable or skipped.
 - Report context cost alongside retrieval quality.
+
+## Failure Analysis Rules
+
+- Diagnose before fixing.
+- Prefer evidence over intuition.
+- Do not classify unsupported root causes.
+- `unknown` is acceptable when the available artifacts do not support a more
+  specific cause.
+- Benchmark failures should drive general Mneno Core improvements rather than
+  benchmark-specific tuning.
+- Failure analysis must be deterministic and evidence-based.
+- Do not invent root causes; prefer `unknown` over unsupported claims.
+- Preserve trace-linked explanations, decisions, reasons, and trace IDs when
+  available.
+- Missing traces, optional capabilities, datasets, or Mneno installations must
+  not crash failure report generation.
+- Do not optimize Mneno purely to pass synthetic cases.
+- Use external benchmark failures to guide general Core improvements without
+  changing benchmark logic, source annotations, or official labels.
 
 ## Adding a Mneno-Specific Benchmark
 
