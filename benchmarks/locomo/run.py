@@ -2256,7 +2256,9 @@ def _extract_ids(value: Any) -> list[str]:
             "ids",
         ):
             if key in value:
-                return _extract_ids(value[key])
+                extracted_ids = _extract_ids(value[key])
+                if extracted_ids:
+                    return extracted_ids
         item_id = value.get("id") or value.get("memory_id")
         return [str(item_id)] if item_id is not None else []
     if isinstance(value, list):
@@ -2274,7 +2276,7 @@ def _context_ids(value: Any, kind: str) -> list[str]:
     if kind not in {"included", "excluded"}:
         raise ValueError(f"Unsupported context ID kind: {kind}")
     legacy_ids = _value(value, f"{kind}_memory_ids")
-    if legacy_ids is not None:
+    if legacy_ids:
         return _extract_ids(legacy_ids)
     return _extract_ids(_value(value, kind, []))
 

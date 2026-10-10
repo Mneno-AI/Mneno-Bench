@@ -75,6 +75,20 @@ class MissingMnenoAdapter:
         return False
 
 
+def test_empty_legacy_fields_do_not_hide_structured_memory_ids() -> None:
+    assert _extract_ids({
+        "retrieved_memory_ids": [],
+        "selected_memory_ids": ["uuid-evidence"],
+    }) == ["uuid-evidence"]
+    for kind in ("included", "excluded"):
+        ids = _context_ids({
+            f"{kind}_memory_ids": [],
+            kind: [{"memory_id": "uuid-evidence"}],
+        }, kind)
+        assert _normalize_ids(ids, {"uuid-evidence": "D1:1"}) == ["D1:1"]
+    assert _normalize_ids(["unknown-uuid"], {}) == ["unknown-uuid"]
+
+
 class FakeMnenoAdapter:
     def is_available(self) -> bool:
         return True
